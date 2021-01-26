@@ -17,37 +17,37 @@ pub struct Contact {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct BReducer {
-    tree: BTreeDag<Contact>,
+pub struct BTreeReducer {
+    dag: BTreeDag<Contact>,
 }
 
-impl BReducer {
+impl BTreeReducer {
     fn new() -> Self {
-        let mut tree: BTreeDag<Contact> = BTreeDag::new();
+        let mut dag: BTreeDag<Contact> = BTreeDag::new();
         let contact_zero: Contact = Contact {
             id: 0,
             gate: XOR::new(),
             wiring: Arrangement::Parallel,
         };
-        tree.add_vertex(contact_zero);
-        BReducer { tree }
+        dag.add_vertex(contact_zero);
+        BTreeReducer { dag }
     }
 
     fn add_gate(&mut self, c: Contact, a: Arrangement) -> Contact {
-        let vertices: Vec<&Contact> = self.tree.vertices().into_iter().collect();
+        let vertices: Vec<&Contact> = self.dag.vertices().into_iter().collect();
         let contact: Contact = Contact {
             id: vertices[vertices.len() - 1].id + 1,
             gate: XOR::new(),
             wiring: a,
         };
-        self.tree.add_vertex(contact.clone());
-        self.tree.add_edge(c, contact.clone()).unwrap();
+        self.dag.add_vertex(contact.clone());
+        self.dag.add_edge(c, contact.clone()).unwrap();
         self._resolve_state(self.root());
         contact
     }
 
     pub fn root(&self) -> Contact {
-        let vertices: Vec<Contact> = self.tree.vertices().into_iter().cloned().collect();
+        let vertices: Vec<Contact> = self.dag.vertices().into_iter().cloned().collect();
         vertices[0].clone()
     }
 
@@ -62,31 +62,31 @@ impl BReducer {
         }
 
         let previous_parents: BTreeSet<Contact> = self
-            .tree
+            .dag
             .vertices()
             .into_iter()
             .cloned()
             .map(|v| -> (Contact, &BTreeSet<Contact>) {
-                (v.clone(), self.tree.connections(v).unwrap())
+                (v.clone(), self.dag.connections(v).unwrap())
             })
             .filter(|t| -> bool { t.1.contains(&c) })
             .map(|t| -> Contact { t.0 })
             .collect();
 
         // Get all the edges from the previous vertex;
-        let result = self.tree.remove_vertex(c);
-        self.tree.add_vertex(updated_c.clone());
+        let result = self.dag.remove_vertex(c);
+        self.dag.add_vertex(updated_c.clone());
         if let Some(previous_children) = result.unwrap() {
             // Add children back.
             for previous_child in previous_children {
-                self.tree
+                self.dag
                     .add_edge(updated_c.clone(), previous_child)
                     .unwrap();
             }
         }
         // Add parents back.
         for previous_parent in previous_parents {
-            self.tree
+            self.dag
                 .add_edge(previous_parent.clone(), updated_c.clone())
                 .unwrap();
             self._resolve_state(previous_parent);
@@ -95,11 +95,11 @@ impl BReducer {
     }
 
     fn get_input_contacts(&self) -> Vec<Contact> {
-        self.tree
+        self.dag
             .vertices()
             .into_iter()
             .cloned()
-            .filter(|c| -> bool { self.tree.connections(c.clone()).unwrap().is_empty() })
+            .filter(|c| -> bool { self.dag.connections(c.clone()).unwrap().is_empty() })
             .collect()
     }
 
@@ -107,9 +107,13 @@ impl BReducer {
         self._resolve_state(self.root())
     }
 
+    pub fn short(&mut self, x: Contact, y: Contact) -> Result<Option<BTreeSet<Contact>>, Error> {
+        self.dag.add_edge(x, y)
+    }
+
     fn _resolve_state(&mut self, c: Contact) -> bool {
         let mut final_state: bool = c.gate.output();
-        if let Some(contacts) = self.tree.connections(c.clone()) {
+        if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
                 let state: bool = c.gate.input();
                 let mut assumed_state: bool = c.wiring.clone().into();
@@ -135,13 +139,13 @@ impl BReducer {
     }
 }
 
-impl Default for BReducer {
+impl Default for BTreeReducer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Input for BReducer {
+impl Input for BTreeReducer {
     fn input(&self) -> Vec<bool> {
         self.get_input_contacts()
             .iter()
@@ -150,7 +154,7 @@ impl Input for BReducer {
     }
 }
 
-impl TransitionInput for BReducer {
+impl TransitionInput for BTreeReducer {
     fn transition_input(&mut self, sv: Vec<bool>) -> Result<Vec<bool>, Error> {
         if sv.len() != self.input().len() {
             return Err(Error::EdgeExistsError);
@@ -164,9 +168,9 @@ impl TransitionInput for BReducer {
     }
 }
 
-impl State for BReducer {
+impl State for BTreeReducer {
     fn state(&self) -> Vec<bool> {
-        self.tree
+        self.dag
             .vertices()
             .into_iter()
             .map(|c| -> bool { c.gate.configuration() })
@@ -174,12 +178,12 @@ impl State for BReducer {
     }
 }
 
-impl TransitionState for BReducer {
+impl TransitionState for BTreeReducer {
     fn transition_state(&mut self, sv: Vec<bool>) -> Result<Vec<bool>, Error> {
         if sv.len() != self.state().len() {
             return Err(Error::EdgeExistsError);
         }
-        for (vertex, state) in self.tree.clone().vertices().into_iter().zip(sv.clone()) {
+        for (vertex, state) in self.dag.clone().vertices().into_iter().zip(sv.clone()) {
             if vertex.gate.configuration() != state {
                 self.toggle(vertex.clone(), true);
             }
@@ -192,42 +196,41 @@ impl TransitionState for BReducer {
 mod unit_tests {
     use crate::arrangement::Arrangement;
     use crate::breducer::api::{Input, State, TransitionInput, TransitionState};
-    use crate::breducer::{BReducer, Contact};
+    use crate::breducer::{BTreeReducer, Contact};
     use crate::xor::api::{Configuration, Input as XorInput, Output};
     use crate::xor::XOR;
     use alloc::vec::Vec;
     use btree_dag::error::Error;
-    use btree_dag::AddEdge;
 
     #[test]
     fn new() {
-        let breducer: BReducer = BReducer::new();
-        assert_eq!(breducer, BReducer::default())
+        let breducer: BTreeReducer = BTreeReducer::new();
+        assert_eq!(breducer, BTreeReducer::default())
     }
 
     #[test]
     fn input() {
-        let breducer: BReducer = BReducer::new();
+        let breducer: BTreeReducer = BTreeReducer::new();
         assert_eq!(breducer.input().len(), 1);
         assert!(!breducer.input()[0])
     }
 
     #[test]
     fn state() {
-        let breducer: BReducer = BReducer::new();
+        let breducer: BTreeReducer = BTreeReducer::new();
         assert_eq!(breducer.state().len(), 1);
         assert!(!breducer.state()[0])
     }
 
     #[test]
     fn output() {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         assert!(!breducer.output())
     }
 
     #[test]
     fn root() {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let root = breducer.root();
         assert_eq!(
             root,
@@ -252,7 +255,7 @@ mod unit_tests {
 
     #[test]
     fn toggle() {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let root = breducer.root();
         assert!(!root.gate.input());
         assert!(!root.gate.configuration());
@@ -313,7 +316,7 @@ mod unit_tests {
         assert!(!root.gate.configuration());
         assert!(root.gate.output());
 
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let series_0 = breducer.add_gate(breducer.root(), Arrangement::Series);
         let series_1 = breducer.add_gate(breducer.root(), Arrangement::Series);
 
@@ -380,7 +383,7 @@ mod unit_tests {
 
     #[test]
     fn add_gate() {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         breducer.add_gate(breducer.root(), Arrangement::Series);
         assert_eq!(breducer.input().len(), 1);
         assert!(!breducer.input()[0]);
@@ -421,7 +424,7 @@ mod unit_tests {
 
     #[test]
     fn transition_input() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         breducer.add_gate(breducer.root(), Arrangement::Series);
         assert_eq!(breducer.input().len(), 1);
         assert!(!breducer.input()[0]);
@@ -449,7 +452,7 @@ mod unit_tests {
         assert_eq!(breducer.input().len(), 1);
         assert!(!breducer.input()[0]);
 
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         breducer.add_gate(breducer.root(), Arrangement::Series);
         breducer.add_gate(breducer.root(), Arrangement::Series);
 
@@ -510,7 +513,7 @@ mod unit_tests {
 
     #[test]
     fn transition_state() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         breducer.add_gate(breducer.root(), Arrangement::Series);
         assert_eq!(breducer.state().len(), 2);
         assert!(!breducer.state()[0]);
@@ -571,7 +574,7 @@ mod unit_tests {
 
     #[test]
     fn and_truth_table() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let series = breducer.add_gate(breducer.root(), Arrangement::Series);
         breducer.add_gate(series.clone(), Arrangement::Series);
         breducer.add_gate(series, Arrangement::Series);
@@ -643,7 +646,7 @@ mod unit_tests {
 
     #[test]
     fn nand_truth_table() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let series = breducer.add_gate(breducer.root(), Arrangement::Series);
         breducer.add_gate(series.clone(), Arrangement::Series);
         breducer.add_gate(series, Arrangement::Series);
@@ -722,7 +725,7 @@ mod unit_tests {
 
     #[test]
     fn or_truth_table() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let parallel = breducer.add_gate(breducer.root(), Arrangement::Parallel);
         breducer.add_gate(parallel.clone(), Arrangement::Series);
         breducer.add_gate(parallel, Arrangement::Series);
@@ -738,13 +741,6 @@ mod unit_tests {
         assert!(!breducer.state()[3]);
 
         assert!(!breducer.output());
-
-        // let mut sv: Vec<bool> = Vec::new();
-        // sv.push(true);
-        // sv.push(false);
-        // sv.push(false);
-        // sv.push(false);
-        // breducer.transition_state(sv)?;
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(true);
@@ -801,7 +797,7 @@ mod unit_tests {
 
     #[test]
     fn nor_truth_table() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let parallel = breducer.add_gate(breducer.root(), Arrangement::Parallel);
         breducer.add_gate(parallel.clone(), Arrangement::Series);
         breducer.add_gate(parallel, Arrangement::Series);
@@ -899,14 +895,14 @@ mod unit_tests {
 
     #[test]
     fn xor_truth_table() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let series_0 = breducer.add_gate(breducer.root(), Arrangement::Series);
         let parallel_1 = breducer.add_gate(series_0.clone(), Arrangement::Parallel);
         let series_1 = breducer.add_gate(series_0.clone(), Arrangement::Series);
         let input_0 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
         let input_1 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
-        breducer.tree.add_edge(series_1.clone(), input_0)?;
-        breducer.tree.add_edge(series_1, input_1)?;
+        breducer.short(series_1.clone(), input_0)?;
+        breducer.short(series_1, input_1)?;
 
         assert_eq!(breducer.input().len(), 2);
         assert!(!breducer.input()[0]);
@@ -1006,14 +1002,14 @@ mod unit_tests {
 
     #[test]
     fn xnor_truth_table() -> Result<(), Error> {
-        let mut breducer: BReducer = BReducer::new();
+        let mut breducer: BTreeReducer = BTreeReducer::new();
         let series_0 = breducer.add_gate(breducer.root(), Arrangement::Series);
         let parallel_1 = breducer.add_gate(series_0.clone(), Arrangement::Parallel);
         let series_1 = breducer.add_gate(series_0.clone(), Arrangement::Series);
         let input_0 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
         let input_1 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
-        breducer.tree.add_edge(series_1.clone(), input_0)?;
-        breducer.tree.add_edge(series_1, input_1)?;
+        breducer.short(series_1.clone(), input_0)?;
+        breducer.short(series_1, input_1)?;
 
         assert_eq!(breducer.input().len(), 2);
         assert!(!breducer.input()[0]);
