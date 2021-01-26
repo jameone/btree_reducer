@@ -1,6 +1,6 @@
 use crate::arrangement::Arrangement;
-use crate::breducer::api::{Input, State, TransitionState, TransitionInput};
-use crate::xor::api::{Configuration, Input as XorInput, Output, Toggle, Reconfigure};
+use crate::breducer::api::{Input, State, TransitionInput, TransitionState};
+use crate::xor::api::{Configuration, Input as XorInput, Output, Reconfigure, Toggle};
 use crate::xor::XOR;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -193,10 +193,11 @@ mod unit_tests {
     use crate::arrangement::Arrangement;
     use crate::breducer::api::{Input, State, TransitionInput, TransitionState};
     use crate::breducer::{BReducer, Contact};
+    use crate::xor::api::{Configuration, Input as XorInput, Output};
     use crate::xor::XOR;
-    use crate::xor::api::{Output, Input as XorInput, Configuration};
     use alloc::vec::Vec;
     use btree_dag::error::Error;
+    use btree_dag::AddEdge;
 
     #[test]
     fn new() {
@@ -719,7 +720,6 @@ mod unit_tests {
         Ok(())
     }
 
-
     #[test]
     fn or_truth_table() -> Result<(), Error> {
         let mut breducer: BReducer = BReducer::new();
@@ -897,101 +897,219 @@ mod unit_tests {
         Ok(())
     }
 
-    // #[test]
-    // fn xor_truth_table() -> Result<(), Error> {
-    //     let mut breducer: BReducer = BReducer::new();
-    //     let parallel = breducer.add_gate(breducer.root(), Arrangement::Parallel);
-    //     breducer.add_gate(parallel.clone(), Arrangement::Series);
-    //     breducer.add_gate(parallel, Arrangement::Series);
-    //
-    //     assert_eq!(breducer.input().len(), 2);
-    //     assert!(!breducer.input()[0]);
-    //     assert!(!breducer.input()[1]);
-    //
-    //     assert_eq!(breducer.state().len(), 4);
-    //     assert!(!breducer.state()[0]);
-    //     assert!(!breducer.state()[1]);
-    //     assert!(!breducer.state()[2]);
-    //     assert!(!breducer.state()[3]);
-    //
-    //     assert!(!breducer.output());
-    //
-    //     let mut sv: Vec<bool> = Vec::new();
-    //     sv.push(true);
-    //     sv.push(false);
-    //     sv.push(false);
-    //     sv.push(false);
-    //     breducer.transition_state(sv)?;
-    //
-    //     assert_eq!(breducer.input().len(), 2);
-    //     assert!(!breducer.input()[0]);
-    //     assert!(!breducer.input()[1]);
-    //
-    //     assert_eq!(breducer.state().len(), 4);
-    //     assert!(breducer.state()[0]);
-    //     assert!(!breducer.state()[1]);
-    //     assert!(!breducer.state()[2]);
-    //     assert!(!breducer.state()[3]);
-    //
-    //     assert!(breducer.output());
-    //
-    //     let mut sv: Vec<bool> = Vec::new();
-    //     sv.push(false);
-    //     sv.push(true);
-    //     sv.push(false);
-    //     sv.push(false);
-    //     breducer.transition_state(sv)?;
-    //
-    //     let mut sv: Vec<bool> = Vec::new();
-    //     sv.push(true);
-    //     sv.push(false);
-    //     breducer.transition_input(sv)?;
-    //
-    //     assert_eq!(breducer.input().len(), 2);
-    //     assert!(breducer.input()[0]);
-    //     assert!(!breducer.input()[1]);
-    //
-    //     assert_eq!(breducer.state().len(), 4);
-    //     assert!(!breducer.state()[0]);
-    //     assert!(breducer.state()[1]);
-    //     assert!(!breducer.state()[2]);
-    //     assert!(!breducer.state()[3]);
-    //
-    //     assert!(!breducer.output());
-    //
-    //     let mut sv: Vec<bool> = Vec::new();
-    //     sv.push(true);
-    //     sv.push(true);
-    //     breducer.transition_input(sv)?;
-    //
-    //     assert_eq!(breducer.input().len(), 2);
-    //     assert!(breducer.input()[0]);
-    //     assert!(breducer.input()[1]);
-    //
-    //     assert_eq!(breducer.state().len(), 4);
-    //     assert!(!breducer.state()[0]);
-    //     assert!(breducer.state()[1]);
-    //     assert!(!breducer.state()[2]);
-    //     assert!(!breducer.state()[3]);
-    //
-    //     assert!(!breducer.output());
-    //
-    //     let mut sv: Vec<bool> = Vec::new();
-    //     sv.push(false);
-    //     sv.push(true);
-    //     breducer.transition_input(sv)?;
-    //
-    //     assert_eq!(breducer.input().len(), 2);
-    //     assert!(!breducer.input()[0]);
-    //     assert!(breducer.input()[1]);
-    //
-    //     assert_eq!(breducer.state().len(), 4);
-    //     assert!(!breducer.state()[0]);
-    //     assert!(breducer.state()[1]);
-    //     assert!(!breducer.state()[2]);
-    //     assert!(!breducer.state()[3]);
-    //
-    //     assert!(!breducer.output());
-    //     Ok(())
-    // }
+    #[test]
+    fn xor_truth_table() -> Result<(), Error> {
+        let mut breducer: BReducer = BReducer::new();
+        let series_0 = breducer.add_gate(breducer.root(), Arrangement::Series);
+        let parallel_1 = breducer.add_gate(series_0.clone(), Arrangement::Parallel);
+        let series_1 = breducer.add_gate(series_0.clone(), Arrangement::Series);
+        let input_0 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
+        let input_1 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
+        breducer.tree.add_edge(series_1.clone(), input_0)?;
+        breducer.tree.add_edge(series_1, input_1)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(!breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(!breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(!breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(false);
+        sv.push(false);
+        sv.push(false);
+        sv.push(true);
+        sv.push(false);
+        sv.push(false);
+        breducer.transition_state(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(!breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(!breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(true);
+        sv.push(false);
+        breducer.transition_input(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(!breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(false);
+        sv.push(true);
+        breducer.transition_input(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(!breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(false);
+        sv.push(false);
+        breducer.transition_input(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(!breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(!breducer.output());
+        Ok(())
+    }
+
+    #[test]
+    fn xnor_truth_table() -> Result<(), Error> {
+        let mut breducer: BReducer = BReducer::new();
+        let series_0 = breducer.add_gate(breducer.root(), Arrangement::Series);
+        let parallel_1 = breducer.add_gate(series_0.clone(), Arrangement::Parallel);
+        let series_1 = breducer.add_gate(series_0.clone(), Arrangement::Series);
+        let input_0 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
+        let input_1 = breducer.add_gate(parallel_1.clone(), Arrangement::Parallel);
+        breducer.tree.add_edge(series_1.clone(), input_0)?;
+        breducer.tree.add_edge(series_1, input_1)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(!breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(!breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(!breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(true);
+        sv.push(false);
+        sv.push(false);
+        sv.push(true);
+        sv.push(false);
+        sv.push(false);
+        breducer.transition_state(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(true);
+        sv.push(false);
+        breducer.transition_input(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(!breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(false);
+        sv.push(true);
+        breducer.transition_input(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(!breducer.output());
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(false);
+        sv.push(false);
+        breducer.transition_input(sv)?;
+
+        assert_eq!(breducer.input().len(), 2);
+        assert!(!breducer.input()[0]);
+        assert!(!breducer.input()[1]);
+
+        assert_eq!(breducer.state().len(), 6);
+        assert!(breducer.state()[0]);
+        assert!(!breducer.state()[1]);
+        assert!(!breducer.state()[2]);
+        assert!(breducer.state()[3]);
+        assert!(!breducer.state()[4]);
+        assert!(!breducer.state()[5]);
+
+        assert!(breducer.output());
+        Ok(())
+    }
 }
+
+
