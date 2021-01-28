@@ -1,9 +1,7 @@
 #![no_std]
 extern crate alloc;
 
-mod arrangement;
-mod breducer;
-mod contact;
+mod reducer;
 mod xor;
 
 #[cfg(test)]
