@@ -14,14 +14,15 @@ This library presents the user with a high level data
 structure called `BTreeReducer`. This data structure can
 be thought of as a generalization of a Boolean logic gate.
 The implementation employs `BTreeDAG` to construct a directed
-acyclic graph (DAG) of XOR gates. There is only ever one (1)
-root node (node 0) which represents the output bit. All other
-nodes have an output dependent on their input, state, program
-bits, and whether they have child elements. If a node does not
-have child elements, i.e. is a leaf node, then it is considered
-an input of the `BTreeReducer`. That is, the number of inputs
-related to the `BTreeReducer` is equal to the number of leaf
-nodes in the `BTreeReducer`'s DAG.
+acyclic graph (DAG) of "Contacts" (think switches, these can be
+either normally open or normally closed, essentially XOR gates).
+There is only ever one (1) root node (node 0) which represents
+the output bit. All other nodes have an output dependent on
+their input, state, program bits, and whether they have child
+elements. If a node does not have child elements, i.e. is a
+leaf node, then it is considered an input of the `BTreeReducer`.
+That is, the number of inputs related to the `BTreeReducer`
+is equal to the number of leaf nodes in the `BTreeReducer`'s DAG.
 
 Each node consists of three (3) bits. One (1) input bit,
 one (1) state bit, and one (1) program bit. If the node has
@@ -65,18 +66,18 @@ output of leaf nodes.
 
 ## Example
 As an example we will construct an XOR gate using the `BTreeReducer` struct.
-By transitioning the input via the input state vector we will demonstrate
+By transitioning the input via an input string we will demonstrate
 the XOR truth table.
 
-We will then transition the state of the `BTreeReducer` struct via state state
-vector and demonstrate the same inputs now resolve an output that represents
+We will then transition the state of the `BTreeReducer` struct via a state
+string and demonstrate the same inputs now resolve an output that represents
 the XNOR truth table.
 
 This example involves another important concept, shorting, which is analogous to
 short circuiting a physical input on an arrangement of digital logic gates.
 This is achieved via the `short` method. With respect to the implementation,
 this method is a wrapper around `BTreeDAG`'s `add_edge` method. The build-in
-resolution algorithm will simply resolve the short is does any other edge.
+resolution algorithm will simply resolve the short as it does any other edge.
 
 ```rust
 use btree_reducer::{BTreeReducer, Arrangement};

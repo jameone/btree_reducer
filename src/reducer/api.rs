@@ -10,6 +10,10 @@ pub trait State<T> {
     fn state(&self) -> T;
 }
 
+pub trait Program<T> {
+    fn program(&self) -> T;
+}
+
 pub trait AddContact {
     fn add_contact(&self);
 }
