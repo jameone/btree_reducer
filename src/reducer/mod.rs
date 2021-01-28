@@ -1,19 +1,59 @@
-use crate::reducer::api::{Input, Reprogram, State, TransitionInput, Output, TransitionState};
-use crate::xor::api::{Configuration, Input as XorInput, Output as XorOutput, Reconfigure, Toggle};
-use crate::xor::XOR;
+use crate::reducer::api::{Configuration, Input, Output, Program, Reconfigure, Reinput, Reprogram};
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use btree_dag::error::Error;
-use btree_dag::{AddEdge, AddVertex, BTreeDAG, Connections, RemoveVertex, Vertices};
+use btree_dag::{AddEdge, AddVertex, BTreeDAG, Connections, RemoveEdge, RemoveVertex, Vertices};
 
 mod api;
 
 #[derive(PartialEq, PartialOrd, Ord, Eq, Clone, Debug)]
 pub struct Contact {
     id: usize,
-    gate: XOR,
+    input: bool,
+    configuration: bool,
     program: bool,
+}
+
+impl Input<bool> for Contact {
+    fn input(&self) -> bool {
+        self.input
+    }
+}
+
+impl Configuration<bool> for Contact {
+    fn configuration(&self) -> bool {
+        self.configuration
+    }
+}
+
+impl Program<bool> for Contact {
+    fn program(&self) -> bool {
+        self.program
+    }
+}
+
+impl Output<bool> for Contact {
+    type Error = Error;
+    fn output(&mut self) -> Result<bool, Self::Error> {
+        Ok(self.input != self.configuration)
+    }
+}
+
+impl Reinput<bool> for Contact {
+    type Error = Error;
+    fn reinput(&mut self, i: bool) -> Result<(), Self::Error> {
+        self.input = i;
+        Ok(())
+    }
+}
+
+impl Reconfigure<bool> for Contact {
+    type Error = Error;
+    fn reconfigure(&mut self, c: bool) -> Result<(), Self::Error> {
+        self.configuration = c;
+        Ok(())
+    }
 }
 
 impl Reprogram<bool> for Contact {
@@ -34,7 +74,8 @@ impl BTreeReducer {
         let mut dag: BTreeDAG<Contact> = BTreeDAG::new();
         let contact_zero: Contact = Contact {
             id: 0,
-            gate: XOR::new(),
+            input: bool::default(),
+            configuration: bool::default(),
             program: bool::default(),
         };
         dag.add_vertex(contact_zero);
@@ -45,12 +86,13 @@ impl BTreeReducer {
         let vertices: Vec<&Contact> = self.dag.vertices().into_iter().collect();
         let contact: Contact = Contact {
             id: vertices[vertices.len() - 1].id + 1,
-            gate: XOR::new(),
+            input: bool::default(),
+            configuration: bool::default(),
             program: bool::default(),
         };
         self.dag.add_vertex(contact.clone());
         self.dag.add_edge(c, contact.clone()).unwrap();
-        self._resolve_state(self.root());
+        self._resolve_state(self.root()).unwrap();
         contact
     }
 
@@ -87,7 +129,7 @@ impl BTreeReducer {
             self.dag
                 .add_edge(previous_parent.clone(), u.clone())
                 .unwrap();
-            self._resolve_state(previous_parent);
+            self._resolve_state(previous_parent).unwrap();
         }
     }
 
@@ -104,15 +146,19 @@ impl BTreeReducer {
         self.dag.add_edge(x, y)
     }
 
-    fn _resolve_state(&mut self, c: Contact) -> bool {
-        let mut final_state: bool = c.gate.output();
+    pub fn remove_short(&mut self, x: Contact, y: Contact) -> Result<BTreeSet<Contact>, Error> {
+        self.dag.remove_edge(x, y)
+    }
+
+    fn _resolve_state(&mut self, mut c: Contact) -> Result<bool, Error> {
+        let mut final_state: bool = c.output()?;
         if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
-                let state: bool = c.gate.input();
-                let mut assumed_state: bool = c.program.clone().into();
+                let state: bool = c.input();
+                let mut assumed_state: bool = c.program;
                 let mut state_set: bool = false;
                 for contact in contacts.clone() {
-                    if self._resolve_state(contact) != assumed_state {
+                    if self._resolve_state(contact)? != assumed_state {
                         if !state_set {
                             assumed_state = !assumed_state;
                             state_set = true;
@@ -123,42 +169,41 @@ impl BTreeReducer {
                 // update the current state with the determined state.
                 if state != assumed_state {
                     let mut updated_c: Contact = c.clone();
-                    updated_c.gate.toggle();
+                    updated_c.reinput(assumed_state)?;
                     self.update(c, updated_c.clone());
-                    final_state = updated_c.gate.output();
+                    final_state = updated_c.output()?;
                 }
             }
         }
         // If there are no adjacent vertices, then this node is a leaf node;
         // the state is simply the output of the contact's XOR gate.
-        final_state
+        Ok(final_state)
     }
-}
-
-fn try_str_to_bool(s: String) -> Result<Vec<bool>, Error> {
-    let mut pv_vec: Vec<bool> = Vec::new();
-    for char in s.chars() {
-        if char == '0'.into() {
-            pv_vec.push(false);
-        } else if char == '1'.into() {
-            pv_vec.push(true);
-        } else {
-            return Err(Error::EdgeExistsError);
+    fn try_str_to_bool(s: String) -> Result<Vec<bool>, Error> {
+        let mut pv_vec: Vec<bool> = Vec::new();
+        for char in s.chars() {
+            if char == '0'.into() {
+                pv_vec.push(false);
+            } else if char == '1'.into() {
+                pv_vec.push(true);
+            } else {
+                return Err(Error::EdgeExistsError);
+            }
         }
+        Ok(pv_vec)
     }
-    Ok(pv_vec)
-}
 
-fn bool_to_str(v: Vec<bool>) -> String {
-    let mut s: String = String::new();
-    for bit in v {
-        if !bit {
-            s.push_str("0");
-        } else {
-            s.push_str("1");
+    fn bool_to_str(v: Vec<bool>) -> String {
+        let mut s: String = String::new();
+        for bit in v {
+            if !bit {
+                s.push_str("0");
+            } else {
+                s.push_str("1");
+            }
         }
+        s
     }
-    s
 }
 
 impl Default for BTreeReducer {
@@ -171,24 +216,8 @@ impl Input<Vec<bool>> for BTreeReducer {
     fn input(&self) -> Vec<bool> {
         self.get_input_contacts()
             .iter()
-            .map(|c| -> bool { c.gate.input() })
+            .map(|c| -> bool { c.input() })
             .collect()
-    }
-}
-
-impl Output<bool> for BTreeReducer {
-    fn output(&mut self) -> bool {
-        self._resolve_state(self.root())
-    }
-}
-
-impl Output<String> for BTreeReducer {
-    fn output(&mut self) -> String {
-        if self._resolve_state(self.root()) {
-            String::from("1")
-        } else {
-            String::from("0")
-        }
     }
 }
 
@@ -197,21 +226,39 @@ where
     Self: Input<Vec<bool>>,
 {
     fn input(&self) -> String {
-        bool_to_str(self.input())
+        BTreeReducer::bool_to_str(self.input())
     }
 }
 
-impl TransitionInput<Vec<bool>> for BTreeReducer {
+impl Output<bool> for BTreeReducer {
     type Error = Error;
-    fn transition_input(&mut self, iv: Vec<bool>) -> Result<(), Self::Error> {
+    fn output(&mut self) -> Result<bool, Self::Error> {
+        self._resolve_state(self.root())
+    }
+}
+
+impl Output<String> for BTreeReducer {
+    type Error = Error;
+    fn output(&mut self) -> Result<String, Self::Error> {
+        if self._resolve_state(self.root())? {
+            Ok(String::from("1"))
+        } else {
+            Ok(String::from("0"))
+        }
+    }
+}
+
+impl Reinput<Vec<bool>> for BTreeReducer {
+    type Error = Error;
+    fn reinput(&mut self, iv: Vec<bool>) -> Result<(), Self::Error> {
         let current_iv: Vec<bool> = self.input();
         if iv.len() != current_iv.len() {
             return Err(Error::EdgeExistsError);
         }
         for (vertex, state) in self.get_input_contacts().iter().zip(iv.clone()) {
-            if vertex.gate.input() != state {
+            if vertex.input() != state {
                 let mut updated_vertex = vertex.clone();
-                updated_vertex.gate.toggle();
+                updated_vertex.reinput(state)?;
                 self.update(vertex.clone(), updated_vertex);
             }
         }
@@ -219,47 +266,60 @@ impl TransitionInput<Vec<bool>> for BTreeReducer {
     }
 }
 
-impl TransitionInput<String> for BTreeReducer
-where
-    Self: TransitionInput<Vec<bool>>,
+impl Reinput<String> for BTreeReducer
+    where
+        Self: Reinput<Vec<bool>>,
 {
     type Error = Error;
-    fn transition_input(&mut self, is: String) -> Result<(), Self::Error> {
-        let iv: Vec<bool> = try_str_to_bool(is)?;
-        self.transition_input(iv)
+    fn reinput(&mut self, ss: String) -> Result<(), Self::Error> {
+        let sv: Vec<bool> = BTreeReducer::try_str_to_bool(ss)?;
+        self.reinput(sv)
     }
 }
 
-impl State<Vec<bool>> for BTreeReducer {
-    fn state(&self) -> Vec<bool> {
+impl Configuration<Vec<bool>> for BTreeReducer {
+    fn configuration(&self) -> Vec<bool> {
         self.dag
             .vertices()
             .into_iter()
-            .map(|c| -> bool { c.gate.configuration() })
+            .map(|c| -> bool { c.configuration() })
             .collect()
     }
 }
 
-impl State<String> for BTreeReducer
-where
-    Self: State<Vec<bool>>,
-{
-    fn state(&self) -> String {
-        bool_to_str(self.state())
+impl Configuration<String> for BTreeReducer {
+    fn configuration(&self) -> String {
+        BTreeReducer::bool_to_str(self.configuration())
     }
 }
 
-impl TransitionState<Vec<bool>> for BTreeReducer {
+impl Program<Vec<bool>> for BTreeReducer {
+    fn program(&self) -> Vec<bool> {
+        self.dag
+            .vertices()
+            .into_iter()
+            .map(|c| -> bool { c.program() })
+            .collect()
+    }
+}
+
+impl Program<String> for BTreeReducer {
+    fn program(&self) -> String {
+        BTreeReducer::bool_to_str(self.program())
+    }
+}
+
+impl Reconfigure<Vec<bool>> for BTreeReducer {
     type Error = Error;
-    fn transition_state(&mut self, sv: Vec<bool>) -> Result<(), Self::Error> {
-        let current_sv: Vec<bool> = self.state();
-        if sv.len() != current_sv.len() {
+    fn reconfigure(&mut self, cv: Vec<bool>) -> Result<(), Self::Error> {
+        let current_cv: Vec<bool> = self.configuration();
+        if cv.len() != current_cv.len() {
             return Err(Error::EdgeExistsError);
         }
-        for (vertex, state) in self.dag.clone().vertices().into_iter().zip(sv.clone()) {
-            if vertex.gate.configuration() != state {
+        for (vertex, state) in self.dag.clone().vertices().into_iter().zip(cv.clone()) {
+            if vertex.configuration() != state {
                 let mut updated_vertex = vertex.clone();
-                updated_vertex.gate.reconfigure();
+                updated_vertex.reconfigure(state)?;
                 self.update(vertex.clone(), updated_vertex);
             }
         }
@@ -267,21 +327,21 @@ impl TransitionState<Vec<bool>> for BTreeReducer {
     }
 }
 
-impl TransitionState<String> for BTreeReducer
-where
-    Self: TransitionState<Vec<bool>>,
+impl Reconfigure<String> for BTreeReducer
+    where
+        Self: Reconfigure<Vec<bool>>,
 {
     type Error = Error;
-    fn transition_state(&mut self, ss: String) -> Result<(), Self::Error> {
-        let sv: Vec<bool> = try_str_to_bool(ss)?;
-        self.transition_state(sv)
+    fn reconfigure(&mut self, ss: String) -> Result<(), Self::Error> {
+        let sv: Vec<bool> = BTreeReducer::try_str_to_bool(ss)?;
+        self.reconfigure(sv)
     }
 }
 
 impl Reprogram<Vec<bool>> for BTreeReducer {
     type Error = Error;
     fn reprogram(&mut self, pv: Vec<bool>) -> Result<(), Self::Error> {
-        let current_pv: Vec<bool> = self.state();
+        let current_pv: Vec<bool> = self.program();
         if pv.len() != current_pv.len() {
             return Err(Error::EdgeExistsError);
         }
@@ -302,19 +362,15 @@ where
 {
     type Error = Error;
     fn reprogram(&mut self, ps: String) -> Result<(), Error> {
-        let pv_vec: Vec<bool> = try_str_to_bool(ps)?;
+        let pv_vec: Vec<bool> = BTreeReducer::try_str_to_bool(ps)?;
         self.reprogram(pv_vec)
     }
 }
 
 #[cfg(test)]
 mod unit_tests {
-    use crate::reducer::api::{Input, Reprogram, State, TransitionInput, Output, TransitionState};
+    use crate::reducer::api::{Configuration, Input, Output, Reconfigure, Reinput, Reprogram};
     use crate::reducer::{BTreeReducer, Contact};
-    use crate::xor::api::{
-        Configuration, Input as XorInput, Output as XorOutput, Reconfigure, Toggle,
-    };
-    use crate::xor::XOR;
     use alloc::string::String;
     use alloc::vec::Vec;
     use btree_dag::error::Error;
@@ -334,18 +390,19 @@ mod unit_tests {
     }
 
     #[test]
-    fn state() {
+    fn configuration() {
         let reducer: BTreeReducer = BTreeReducer::new();
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 1);
-        assert!(!state[0])
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 1);
+        assert!(!configuration[0])
     }
 
     #[test]
-    fn output() {
+    fn output() -> Result<(), Error> {
         let mut reducer: BTreeReducer = BTreeReducer::new();
-        let output: bool = reducer.output();
-        assert!(!output)
+        let output: bool = reducer.output()?;
+        assert!(!output);
+        Ok(())
     }
 
     #[test]
@@ -355,64 +412,66 @@ mod unit_tests {
             reducer.root(),
             Contact {
                 id: 0,
-                gate: XOR::new(),
+                input: bool::default(),
+                configuration: bool::default(),
                 program: bool::default(),
             }
         );
     }
 
     #[test]
-    fn update() {
+    fn update() -> Result<(), Error> {
         let mut reducer: BTreeReducer = BTreeReducer::new();
-        let root = reducer.root();
-        assert!(!root.gate.input());
-        assert!(!root.gate.configuration());
-        assert!(!root.gate.output());
+        let mut root = reducer.root();
+        assert!(!root.input());
+        assert!(!root.configuration());
+        assert!(!root.output()?);
 
         let mut new_root = reducer.root();
-        new_root.gate.toggle();
+        new_root.reinput(true)?;
         reducer.update(reducer.root(), new_root);
 
-        assert!(reducer.root().gate.input());
-        assert!(!reducer.root().gate.configuration());
-        assert!(reducer.root().gate.output());
+        assert!(reducer.root().input());
+        assert!(!reducer.root().configuration());
+        assert!(reducer.root().output()?);
 
         let mut new_root = reducer.root();
-        new_root.gate.toggle();
+        new_root.reinput(false)?;
         reducer.update(reducer.root(), new_root);
 
         let mut new_root = reducer.root();
-        new_root.gate.reconfigure();
+        new_root.reconfigure(true)?;
         reducer.update(reducer.root(), new_root);
 
-        assert!(!reducer.root().gate.input());
-        assert!(reducer.root().gate.configuration());
-        assert!(reducer.root().gate.output());
+        assert!(!reducer.root().input());
+        assert!(reducer.root().configuration());
+        assert!(reducer.root().output()?);
 
         let mut new_root = reducer.root();
-        new_root.gate.reconfigure();
+        new_root.reconfigure(false)?;
         reducer.update(reducer.root(), new_root);
 
-        assert!(!reducer.root().gate.input());
-        assert!(!reducer.root().gate.configuration());
-        assert!(!reducer.root().gate.output());
+        assert!(!reducer.root().input());
+        assert!(!reducer.root().configuration());
+        assert!(!reducer.root().output()?);
+        Ok(())
     }
 
     #[test]
-    fn add_gate() {
+    fn add_gate() -> Result<(), Error> {
         let mut reducer: BTreeReducer = BTreeReducer::new();
         reducer.add_gate(reducer.root());
 
-            let input: Vec<bool> = reducer.input();
+        let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
         assert!(!input[0]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(!state[0]);
-        assert!(!state[1]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let series = reducer.add_gate(reducer.root());
@@ -422,13 +481,13 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 3);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 3);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         reducer.add_gate(series);
@@ -438,52 +497,53 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
+        Ok(())
     }
 
     #[test]
-    fn transition_input() -> Result<(), Error> {
+    fn reinput() -> Result<(), Error> {
         let mut reducer: BTreeReducer = BTreeReducer::new();
         reducer.add_gate(reducer.root());
 
-            let input: Vec<bool> = reducer.input();
+        let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
         assert!(!input[0]);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        assert!(reducer.transition_input(iv).is_err());
+        assert!(reducer.reinput(iv).is_err());
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
-            let input: Vec<bool> = reducer.input();
+        let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
         assert!(input[0]);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
-            let input: Vec<bool> = reducer.input();
+        let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
         assert!(input[0]);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
-            let input: Vec<bool> = reducer.input();
+        let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
         assert!(!input[0]);
 
@@ -493,7 +553,7 @@ mod unit_tests {
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
-        assert!(reducer.transition_input(iv).is_err());
+        assert!(reducer.reinput(iv).is_err());
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -503,7 +563,7 @@ mod unit_tests {
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -513,7 +573,7 @@ mod unit_tests {
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -523,7 +583,7 @@ mod unit_tests {
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -533,7 +593,7 @@ mod unit_tests {
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -543,7 +603,7 @@ mod unit_tests {
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -553,74 +613,74 @@ mod unit_tests {
     }
 
     #[test]
-    fn transition_state() -> Result<(), Error> {
+    fn reconfigure() -> Result<(), Error> {
         let mut reducer: BTreeReducer = BTreeReducer::new();
         reducer.add_gate(reducer.root());
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(!state[0]);
-        assert!(!state[1]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(true);
         sv.push(true);
         sv.push(true);
-        assert!(reducer.transition_state(sv).is_err());
+        assert!(reducer.reconfigure(sv).is_err());
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(true);
-        assert!(reducer.transition_state(sv).is_err());
+        assert!(reducer.reconfigure(sv).is_err());
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(true);
         sv.push(true);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
-            let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(state[0]);
-        assert!(state[1]);
-
-        let mut sv: Vec<bool> = Vec::new();
-        sv.push(false);
-        sv.push(true);
-        reducer.transition_state(sv)?;
-
-            let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(!state[0]);
-        assert!(state[1]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(configuration[0]);
+        assert!(configuration[1]);
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(false);
-        sv.push(false);
-        reducer.transition_state(sv)?;
+        sv.push(true);
+        reducer.reconfigure(sv)?;
 
-            let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(!state[0]);
-        assert!(!state[1]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(!configuration[0]);
+        assert!(configuration[1]);
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
-            let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(!state[0]);
-        assert!(!state[1]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+
+        let mut sv: Vec<bool> = Vec::new();
+        sv.push(false);
+        sv.push(false);
+        reducer.reconfigure(sv)?;
+
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(true);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
-            let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 2);
-        assert!(state[0]);
-        assert!(!state[1]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 2);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
 
         Ok(())
     }
@@ -644,74 +704,74 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
         Ok(())
     }
@@ -735,14 +795,14 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -750,66 +810,66 @@ mod unit_tests {
         sv.push(false);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
         Ok(())
     }
@@ -826,74 +886,74 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
         Ok(())
     }
@@ -910,14 +970,14 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -925,21 +985,21 @@ mod unit_tests {
         sv.push(false);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -947,66 +1007,66 @@ mod unit_tests {
         sv.push(true);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
         Ok(())
     }
@@ -1036,16 +1096,16 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -1055,89 +1115,89 @@ mod unit_tests {
         sv.push(true);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
         Ok(())
     }
@@ -1167,16 +1227,16 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -1186,89 +1246,89 @@ mod unit_tests {
         sv.push(true);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
         Ok(())
     }
@@ -1292,161 +1352,161 @@ mod unit_tests {
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let mut sv: Vec<bool> = Vec::new();
         sv.push(true);
         sv.push(false);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 4);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(!state[3]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 4);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(!configuration[3]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         Ok(())
@@ -1479,98 +1539,98 @@ mod unit_tests {
         sv.push(true);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         // 00 -> 0
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         // 10 -> 1
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         // 01 -> 1
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         // 11 -> 0
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(!state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(!configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         // XOR -> XNOR
@@ -1581,98 +1641,98 @@ mod unit_tests {
         sv.push(true);
         sv.push(false);
         sv.push(false);
-        reducer.transition_state(sv)?;
+        reducer.reconfigure(sv)?;
 
         // 00 -> 1
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         // 10 -> 0
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(false);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(!input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         // 01 -> 0
         let mut iv: Vec<bool> = Vec::new();
         iv.push(false);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(!input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(!output);
 
         // 11 -> 1
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
         iv.push(true);
-        reducer.transition_input(iv)?;
+        reducer.reinput(iv)?;
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
         assert!(input[0]);
         assert!(input[1]);
 
-        let state: Vec<bool> = reducer.state();
-        assert_eq!(state.len(), 6);
-        assert!(state[0]);
-        assert!(!state[1]);
-        assert!(!state[2]);
-        assert!(state[3]);
-        assert!(!state[4]);
-        assert!(!state[5]);
+        let configuration: Vec<bool> = reducer.configuration();
+        assert_eq!(configuration.len(), 6);
+        assert!(configuration[0]);
+        assert!(!configuration[1]);
+        assert!(!configuration[2]);
+        assert!(configuration[3]);
+        assert!(!configuration[4]);
+        assert!(!configuration[5]);
 
-        let output: bool = reducer.output();
+        let output: bool = reducer.output()?;
         assert!(output);
 
         Ok(())
@@ -1693,114 +1753,114 @@ mod unit_tests {
         reducer.reprogram(ps)?;
 
         let ss: String = String::from("000100");
-        reducer.transition_state(ss)?;
+        reducer.reconfigure(ss)?;
 
         // 00 -> 0
         let is: String = String::from("00");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "00");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "000100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "0");
 
         // 10 -> 1
         let is: String = String::from("10");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "10");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "000100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "1");
 
         // 01 -> 1
         let is: String = String::from("01");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "01");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "000100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "1");
 
         // 11 -> 0
         let is: String = String::from("11");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "11");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "000100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "0");
 
         // XOR -> XNOR
         let ss: String = String::from("100100");
-        reducer.transition_state(ss)?;
+        reducer.reconfigure(ss)?;
 
         // 00 -> 1
         let is: String = String::from("00");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "00");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "100100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "1");
 
         // 10 -> 0
         let is: String = String::from("10");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "10");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "100100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "0");
 
         // 01 -> 0
         let is: String = String::from("01");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "01");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "100100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "0");
 
         // 11 -> 1
         let is: String = String::from("11");
-        reducer.transition_input(is)?;
+        reducer.reinput(is)?;
 
         let input: String = reducer.input();
         assert_eq!(input.as_str(), "11");
 
-        let state: String = reducer.state();
-        assert_eq!(state.as_str(), "100100");
+        let configuration: String = reducer.configuration();
+        assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output();
+        let output: String = reducer.output()?;
         assert_eq!(output, "1");
 
         Ok(())

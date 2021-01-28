@@ -2,7 +2,6 @@
 extern crate alloc;
 
 mod reducer;
-mod xor;
 
 #[cfg(test)]
 mod unit_tests {
