@@ -1942,26 +1942,24 @@ mod unit_tests {
 
         impl Transition<char> for char {
             fn transition(&self) -> char {
-                '\0'
+                'y'
             }
         }
 
         impl Output<char> for Contact<char> {
             type Error = Error;
             fn output(&mut self) -> Result<char, Self::Error> {
-                let contains = |i: char| -> bool {
-                    let mut vowels: BTreeSet<char> = BTreeSet::new();
-                    vowels.insert('a');
-                    vowels.insert('e');
-                    vowels.insert('i');
-                    vowels.insert('o');
-                    vowels.insert('u');
-                    vowels.contains(&i)
-                };
-                if contains(self.input) {
-                    Ok(self.input)
+                let mut vowels: BTreeSet<char> = BTreeSet::new();
+                vowels.insert('a');
+                vowels.insert('e');
+                vowels.insert('i');
+                vowels.insert('o');
+                vowels.insert('u');
+                vowels.insert('y');
+                if vowels.contains(&self.input) {
+                    Ok('y')
                 } else {
-                    Ok('\0')
+                    Ok('n')
                 }
             }
         }
@@ -1972,21 +1970,60 @@ mod unit_tests {
         reducer.add_contact(reducer.root());
 
         let mut input: Vec<char> = Vec::new();
-        input.push('a');
-        input.push('a');
-        input.push('a');
-
+        input.push('f');
+        input.push('o');
+        input.push('x');
         reducer.reinput(input.clone())?;
 
         let mut program: Vec<char> = Vec::new();
-        program.push('a');
+        program.push('n');
         program.push('\0');
         program.push('\0');
         program.push('\0');
-
         reducer.reprogram(program)?;
 
-        assert_eq!(reducer.output()?, 'a');
+        assert_eq!(reducer.output()?, 'y');
+
+        let mut input: Vec<char> = Vec::new();
+        input.push('c');
+        input.push('a');
+        input.push('t');
+        reducer.reinput(input.clone())?;
+
+        assert_eq!(reducer.output()?, 'y');
+
+        let mut input: Vec<char> = Vec::new();
+        input.push('p');
+        input.push('s');
+        input.push('m');
+        reducer.reinput(input.clone())?;
+
+        assert_eq!(reducer.output()?, 'n');
+
+        let mut input: Vec<char> = Vec::new();
+        input.push('i');
+        input.push('b');
+        input.push('m');
+        reducer.reinput(input.clone())?;
+
+        assert_eq!(reducer.output()?, 'y');
+
+        let mut input: Vec<char> = Vec::new();
+        input.push('d');
+        input.push('o');
+        input.push('g');
+        reducer.reinput(input.clone())?;
+
+        assert_eq!(reducer.output()?, 'y');
+
+        let mut input: Vec<char> = Vec::new();
+        input.push('p');
+        input.push('p');
+        input.push('m');
+        reducer.reinput(input.clone())?;
+
+        assert_eq!(reducer.output()?, 'n');
+
         Ok(())
     }
 }
