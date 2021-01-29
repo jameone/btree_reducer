@@ -7,4 +7,5 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-btree_dag = { version = "0.1.0", path = "../btree_dag" }
+btree_error = { path = "../btree_error" }
+btree_dag = { path = "../btree_dag" }
