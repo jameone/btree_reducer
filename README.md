@@ -80,7 +80,9 @@ this method is a wrapper around `BTreeDAG`'s `add_edge` method. The build-in
 resolution algorithm will simply resolve the short as it does any other edge.
 
 ```rust
-use btree_reducer::{BTreeReducer, Arrangement};
+use btree_reducer::{BTreeReducer};
+use alloc::vec::Vec;
+use alloc::string::String;
 
 fn main() {
     let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
@@ -205,6 +207,101 @@ fn main() {
 
     let output: String = reducer.output()?;
     assert_eq!(output, "1");
+}
+```
+
+As a further example of the generality of this data structure, consider creating a simple
+reducer which checks if any three (3) letter words contain vowels. Notice we are overriding
+a couple of the traits to achieve the desired functionality.
+
+```rust
+use btree_reducer::{BTreeReducer, Transition, Output, Contact};
+use alloc::vec::Vec;
+
+fn main() {
+    impl Transition<char> for char {
+        fn transition(&self) -> char {
+            'y'
+        }
+    }
+
+    impl Output<char> for Contact<char> {
+        type Error = Error;
+        fn output(&mut self) -> Result<char, Self::Error> {
+            let mut vowels: BTreeSet<char> = BTreeSet::new();
+            vowels.insert('a');
+            vowels.insert('e');
+            vowels.insert('i');
+            vowels.insert('o');
+            vowels.insert('u');
+            vowels.insert('y');
+            if vowels.contains(&self.input) {
+                Ok('y')
+            } else {
+                Ok('n')
+            }
+        }
+    }
+
+    let mut reducer: BTreeReducer<char> = BTreeReducer::new();
+    reducer.add_contact(reducer.root());
+    reducer.add_contact(reducer.root());
+    reducer.add_contact(reducer.root());
+
+    let mut input: Vec<char> = Vec::new();
+    input.push('f');
+    input.push('o');
+    input.push('x');
+    reducer.reinput(input.clone())?;
+
+    let mut program: Vec<char> = Vec::new();
+    program.push('n');
+    program.push('\0');
+    program.push('\0');
+    program.push('\0');
+    reducer.reprogram(program)?;
+
+    assert_eq!(reducer.output()?, 'y');
+
+    let mut input: Vec<char> = Vec::new();
+    input.push('c');
+    input.push('a');
+    input.push('t');
+    reducer.reinput(input.clone())?;
+
+    assert_eq!(reducer.output()?, 'y');
+
+    let mut input: Vec<char> = Vec::new();
+    input.push('p');
+    input.push('s');
+    input.push('m');
+    reducer.reinput(input.clone())?;
+
+    assert_eq!(reducer.output()?, 'n');
+
+    let mut input: Vec<char> = Vec::new();
+    input.push('i');
+    input.push('b');
+    input.push('m');
+    reducer.reinput(input.clone())?;
+
+    assert_eq!(reducer.output()?, 'y');
+
+    let mut input: Vec<char> = Vec::new();
+    input.push('d');
+    input.push('o');
+    input.push('g');
+    reducer.reinput(input.clone())?;
+
+    assert_eq!(reducer.output()?, 'y');
+
+    let mut input: Vec<char> = Vec::new();
+    input.push('v');
+    input.push('t');
+    input.push('l');
+    reducer.reinput(input.clone())?;
+
+    assert_eq!(reducer.output()?, 'n');
 }
 ```
 

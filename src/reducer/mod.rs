@@ -2017,9 +2017,9 @@ mod unit_tests {
         assert_eq!(reducer.output()?, 'y');
 
         let mut input: Vec<char> = Vec::new();
-        input.push('p');
-        input.push('p');
-        input.push('m');
+        input.push('t');
+        input.push('l');
+        input.push('s');
         reducer.reinput(input.clone())?;
 
         assert_eq!(reducer.output()?, 'n');
