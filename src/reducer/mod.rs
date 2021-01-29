@@ -1,4 +1,6 @@
-use crate::reducer::api::{Configuration, Input, Output, Program, Reconfigure, Reinput, Reprogram};
+use crate::reducer::api::{
+    Configuration, Dimension, Input, Output, Program, Reconfigure, Reinput, Reprogram, Transition,
+};
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -8,110 +10,143 @@ use btree_dag::{AddEdge, AddVertex, BTreeDAG, Connections, RemoveEdge, RemoveVer
 mod api;
 
 #[derive(PartialEq, PartialOrd, Ord, Eq, Clone, Debug)]
-pub struct Contact {
+pub struct Contact<T>
+where
+    T: Default + Ord + Clone,
+{
     id: usize,
-    input: bool,
-    configuration: bool,
-    program: bool,
+    input: T,
+    configuration: T,
+    program: T,
 }
 
-impl Input<bool> for Contact {
-    fn input(&self) -> bool {
-        self.input
+impl<T> Input<T> for Contact<T>
+where
+    T: Default + Ord + Clone,
+{
+    fn input(&self) -> T {
+        self.input.clone()
     }
 }
 
-impl Configuration<bool> for Contact {
-    fn configuration(&self) -> bool {
-        self.configuration
+impl<T> Configuration<T> for Contact<T>
+where
+    T: Default + Ord + Clone,
+{
+    fn configuration(&self) -> T {
+        self.configuration.clone()
     }
 }
 
-impl Program<bool> for Contact {
-    fn program(&self) -> bool {
-        self.program
+impl<T> Program<T> for Contact<T>
+where
+    T: Default + Ord + Clone,
+{
+    fn program(&self) -> T {
+        self.program.clone()
     }
 }
 
-impl Output<bool> for Contact {
+impl Output<bool> for Contact<bool> {
     type Error = Error;
     fn output(&mut self) -> Result<bool, Self::Error> {
         Ok(self.input != self.configuration)
     }
 }
 
-impl Reinput<bool> for Contact {
+impl<T> Reinput<T> for Contact<T>
+where
+    T: Default + Ord + Clone,
+{
     type Error = Error;
-    fn reinput(&mut self, i: bool) -> Result<(), Self::Error> {
+    fn reinput(&mut self, i: T) -> Result<(), Self::Error> {
         self.input = i;
         Ok(())
     }
 }
 
-impl Reconfigure<bool> for Contact {
+impl<T> Reconfigure<T> for Contact<T>
+where
+    T: Default + Ord + Clone,
+{
     type Error = Error;
-    fn reconfigure(&mut self, c: bool) -> Result<(), Self::Error> {
+    fn reconfigure(&mut self, c: T) -> Result<(), Self::Error> {
         self.configuration = c;
         Ok(())
     }
 }
 
-impl Reprogram<bool> for Contact {
+impl<T> Reprogram<T> for Contact<T>
+where
+    T: Default + Ord + Clone,
+{
     type Error = Error;
-    fn reprogram(&mut self, p: bool) -> Result<(), Self::Error> {
+    fn reprogram(&mut self, p: T) -> Result<(), Self::Error> {
         self.program = p;
         Ok(())
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct BTreeReducer {
-    dag: BTreeDAG<Contact>,
+pub struct BTreeReducer<T>
+where
+    T: Default + Ord + Clone,
+{
+    dag: BTreeDAG<Contact<T>>,
 }
 
-impl BTreeReducer {
+impl<T> BTreeReducer<T>
+where
+    T: Default + Ord + Clone + Transition<T>,
+{
     fn new() -> Self {
-        let mut dag: BTreeDAG<Contact> = BTreeDAG::new();
-        let contact_zero: Contact = Contact {
+        let mut dag: BTreeDAG<Contact<T>> = BTreeDAG::new();
+        let contact_zero: Contact<T> = Contact {
             id: 0,
-            input: bool::default(),
-            configuration: bool::default(),
-            program: bool::default(),
+            input: T::default(),
+            configuration: T::default(),
+            program: T::default(),
         };
         dag.add_vertex(contact_zero);
         BTreeReducer { dag }
     }
 
-    fn add_gate(&mut self, c: Contact) -> Contact {
-        let vertices: Vec<&Contact> = self.dag.vertices().into_iter().collect();
-        let contact: Contact = Contact {
+    fn add_contact(&mut self, c: Contact<T>) -> Contact<T>
+    where
+        Contact<T>: Output<T>,
+    {
+        let vertices: Vec<&Contact<T>> = self.dag.vertices().into_iter().collect();
+        let contact: Contact<T> = Contact {
             id: vertices[vertices.len() - 1].id + 1,
-            input: bool::default(),
-            configuration: bool::default(),
-            program: bool::default(),
+            input: T::default(),
+            configuration: T::default(),
+            program: T::default(),
         };
         self.dag.add_vertex(contact.clone());
         self.dag.add_edge(c, contact.clone()).unwrap();
-        self._resolve_state(self.root()).unwrap();
+        self._resolve_branch(self.root()).unwrap();
         contact
     }
 
-    pub fn root(&self) -> Contact {
-        let vertices: Vec<Contact> = self.dag.vertices().into_iter().cloned().collect();
+    pub fn root(&self) -> Contact<T> {
+        let vertices: Vec<Contact<T>> = self.dag.vertices().into_iter().cloned().collect();
         vertices[0].clone()
     }
 
-    fn update(&mut self, p: Contact, u: Contact) {
-        let previous_parents: BTreeSet<Contact> = self
+    fn update(&mut self, p: Contact<T>, u: Contact<T>)
+    where
+        Contact<T>: Output<T>,
+    {
+        let previous_parents: BTreeSet<Contact<T>> = self
             .dag
             .vertices()
             .into_iter()
             .cloned()
-            .map(|v| -> (Contact, &BTreeSet<Contact>) {
+            .map(|v| -> (Contact<T>, &BTreeSet<Contact<T>>) {
                 (v.clone(), self.dag.connections(v).unwrap())
             })
             .filter(|t| -> bool { t.1.contains(&p) })
-            .map(|t| -> Contact { t.0 })
+            .map(|t| -> Contact<T> { t.0 })
             .collect();
 
         // Get all the edges from the previous vertex;
@@ -129,11 +164,11 @@ impl BTreeReducer {
             self.dag
                 .add_edge(previous_parent.clone(), u.clone())
                 .unwrap();
-            self._resolve_state(previous_parent).unwrap();
+            self._resolve_branch(previous_parent).unwrap();
         }
     }
 
-    fn get_input_contacts(&self) -> Vec<Contact> {
+    fn get_input_contacts(&self) -> Vec<Contact<T>> {
         self.dag
             .vertices()
             .into_iter()
@@ -142,36 +177,42 @@ impl BTreeReducer {
             .collect()
     }
 
-    pub fn short(&mut self, x: Contact, y: Contact) -> Result<BTreeSet<Contact>, Error> {
+    pub fn short(&mut self, x: Contact<T>, y: Contact<T>) -> Result<BTreeSet<Contact<T>>, Error> {
         self.dag.add_edge(x, y)
     }
 
-    pub fn remove_short(&mut self, x: Contact, y: Contact) -> Result<BTreeSet<Contact>, Error> {
+    pub fn remove_short(
+        &mut self,
+        x: Contact<T>,
+        y: Contact<T>,
+    ) -> Result<BTreeSet<Contact<T>>, Error> {
         self.dag.remove_edge(x, y)
     }
 
-    fn _resolve_state(&mut self, mut c: Contact) -> Result<bool, Error> {
-        let mut final_state: bool = c.output()?;
+    fn _resolve_branch(&mut self, c: Contact<T>) -> Result<T, Error>
+    where
+        T: Transition<T>,
+        Contact<T>: Output<T>,
+    {
+        let mut final_state: T = c.clone().output().unwrap_or(T::default());
         if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
-                let state: bool = c.input();
-                let mut assumed_state: bool = c.program;
+                let state: T = c.input();
+                let mut assumed_state: T = c.program().clone();
                 let mut state_set: bool = false;
                 for contact in contacts.clone() {
-                    if self._resolve_state(contact)? != assumed_state {
-                        if !state_set {
-                            assumed_state = !assumed_state;
-                            state_set = true;
-                        }
+                    if self._resolve_branch(contact).unwrap() != assumed_state && !state_set {
+                        assumed_state = assumed_state.transition();
+                        state_set = true;
                     }
                 }
                 // If the determined state is not equal to the current state,
                 // update the current state with the determined state.
                 if state != assumed_state {
-                    let mut updated_c: Contact = c.clone();
-                    updated_c.reinput(assumed_state)?;
+                    let mut updated_c: Contact<T> = c.clone();
+                    updated_c.reinput(assumed_state).unwrap();
                     self.update(c, updated_c.clone());
-                    final_state = updated_c.output()?;
+                    final_state = updated_c.output().unwrap_or(T::default());
                 }
             }
         }
@@ -182,9 +223,9 @@ impl BTreeReducer {
     fn try_str_to_bool(s: String) -> Result<Vec<bool>, Error> {
         let mut pv_vec: Vec<bool> = Vec::new();
         for char in s.chars() {
-            if char == '0'.into() {
+            if char == '0' {
                 pv_vec.push(false);
-            } else if char == '1'.into() {
+            } else if char == '1' {
                 pv_vec.push(true);
             } else {
                 return Err(Error::EdgeExistsError);
@@ -197,50 +238,61 @@ impl BTreeReducer {
         let mut s: String = String::new();
         for bit in v {
             if !bit {
-                s.push_str("0");
+                s.push('0');
             } else {
-                s.push_str("1");
+                s.push('1');
             }
         }
         s
     }
 }
 
-impl Default for BTreeReducer {
+impl<T> Default for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Input<Vec<bool>> for BTreeReducer {
-    fn input(&self) -> Vec<bool> {
+impl<T> Input<Vec<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+{
+    fn input(&self) -> Vec<T> {
         self.get_input_contacts()
             .iter()
-            .map(|c| -> bool { c.input() })
+            .cloned()
+            .map(|c| -> T { c.input() })
             .collect()
     }
 }
 
-impl Input<String> for BTreeReducer
+impl Input<String> for BTreeReducer<bool>
 where
     Self: Input<Vec<bool>>,
 {
     fn input(&self) -> String {
-        BTreeReducer::bool_to_str(self.input())
+        BTreeReducer::<bool>::bool_to_str(self.input())
     }
 }
 
-impl Output<bool> for BTreeReducer {
+impl<T> Output<T> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+    Contact<T>: Output<T>,
+{
     type Error = Error;
-    fn output(&mut self) -> Result<bool, Self::Error> {
-        self._resolve_state(self.root())
+    fn output(&mut self) -> Result<T, Self::Error> {
+        self._resolve_branch(self.root())
     }
 }
 
-impl Output<String> for BTreeReducer {
+impl Output<String> for BTreeReducer<bool> {
     type Error = Error;
     fn output(&mut self) -> Result<String, Self::Error> {
-        if self._resolve_state(self.root())? {
+        if self._resolve_branch(self.root())? {
             Ok(String::from("1"))
         } else {
             Ok(String::from("0"))
@@ -248,14 +300,18 @@ impl Output<String> for BTreeReducer {
     }
 }
 
-impl Reinput<Vec<bool>> for BTreeReducer {
+impl<T> Reinput<Vec<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+    Contact<T>: Output<T>,
+{
     type Error = Error;
-    fn reinput(&mut self, iv: Vec<bool>) -> Result<(), Self::Error> {
-        let current_iv: Vec<bool> = self.input();
-        if iv.len() != current_iv.len() {
+    fn reinput(&mut self, iv: Vec<T>) -> Result<(), Self::Error> {
+        let input: Vec<T> = self.input();
+        if &input.dimension() != &iv.dimension() {
             return Err(Error::EdgeExistsError);
         }
-        for (vertex, state) in self.get_input_contacts().iter().zip(iv.clone()) {
+        for (vertex, state) in self.get_input_contacts().iter().cloned().zip(iv) {
             if vertex.input() != state {
                 let mut updated_vertex = vertex.clone();
                 updated_vertex.reinput(state)?;
@@ -266,57 +322,67 @@ impl Reinput<Vec<bool>> for BTreeReducer {
     }
 }
 
-impl Reinput<String> for BTreeReducer
+impl Reinput<String> for BTreeReducer<bool>
     where
         Self: Reinput<Vec<bool>>,
 {
     type Error = Error;
     fn reinput(&mut self, ss: String) -> Result<(), Self::Error> {
-        let sv: Vec<bool> = BTreeReducer::try_str_to_bool(ss)?;
+        let sv: Vec<bool> = BTreeReducer::<bool>::try_str_to_bool(ss)?;
         self.reinput(sv)
     }
 }
 
-impl Configuration<Vec<bool>> for BTreeReducer {
-    fn configuration(&self) -> Vec<bool> {
+impl<T> Configuration<Vec<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default,
+{
+    fn configuration(&self) -> Vec<T> {
         self.dag
             .vertices()
             .into_iter()
-            .map(|c| -> bool { c.configuration() })
+            .map(|c| -> T { c.configuration() })
             .collect()
     }
 }
 
-impl Configuration<String> for BTreeReducer {
+impl Configuration<String> for BTreeReducer<bool> {
     fn configuration(&self) -> String {
-        BTreeReducer::bool_to_str(self.configuration())
+        BTreeReducer::<bool>::bool_to_str(self.configuration())
     }
 }
 
-impl Program<Vec<bool>> for BTreeReducer {
-    fn program(&self) -> Vec<bool> {
+impl<T> Program<Vec<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default,
+{
+    fn program(&self) -> Vec<T> {
         self.dag
             .vertices()
             .into_iter()
-            .map(|c| -> bool { c.program() })
+            .map(|c| -> T { c.program() })
             .collect()
     }
 }
 
-impl Program<String> for BTreeReducer {
+impl Program<String> for BTreeReducer<bool> {
     fn program(&self) -> String {
-        BTreeReducer::bool_to_str(self.program())
+        BTreeReducer::<bool>::bool_to_str(self.program())
     }
 }
 
-impl Reconfigure<Vec<bool>> for BTreeReducer {
+impl<T> Reconfigure<Vec<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+    Contact<T>: Output<T>,
+{
     type Error = Error;
-    fn reconfigure(&mut self, cv: Vec<bool>) -> Result<(), Self::Error> {
-        let current_cv: Vec<bool> = self.configuration();
-        if cv.len() != current_cv.len() {
+    fn reconfigure(&mut self, cv: Vec<T>) -> Result<(), Self::Error> {
+        let configuration: Vec<T> = self.configuration();
+        if &configuration.dimension() != &cv.dimension() {
             return Err(Error::EdgeExistsError);
         }
-        for (vertex, state) in self.dag.clone().vertices().into_iter().zip(cv.clone()) {
+        for (vertex, state) in self.dag.clone().vertices().into_iter().cloned().zip(cv) {
             if vertex.configuration() != state {
                 let mut updated_vertex = vertex.clone();
                 updated_vertex.reconfigure(state)?;
@@ -327,25 +393,29 @@ impl Reconfigure<Vec<bool>> for BTreeReducer {
     }
 }
 
-impl Reconfigure<String> for BTreeReducer
+impl Reconfigure<String> for BTreeReducer<bool>
     where
         Self: Reconfigure<Vec<bool>>,
 {
     type Error = Error;
     fn reconfigure(&mut self, ss: String) -> Result<(), Self::Error> {
-        let sv: Vec<bool> = BTreeReducer::try_str_to_bool(ss)?;
+        let sv: Vec<bool> = BTreeReducer::<bool>::try_str_to_bool(ss)?;
         self.reconfigure(sv)
     }
 }
 
-impl Reprogram<Vec<bool>> for BTreeReducer {
+impl<T> Reprogram<Vec<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+    Contact<T>: Output<T>,
+{
     type Error = Error;
-    fn reprogram(&mut self, pv: Vec<bool>) -> Result<(), Self::Error> {
-        let current_pv: Vec<bool> = self.program();
-        if pv.len() != current_pv.len() {
+    fn reprogram(&mut self, pv: Vec<T>) -> Result<(), Self::Error> {
+        let program: Vec<T> = self.program();
+        if &program.dimension() != &pv.dimension() {
             return Err(Error::EdgeExistsError);
         }
-        for (vertex, state) in self.dag.clone().vertices().into_iter().zip(pv.clone()) {
+        for (vertex, state) in self.dag.clone().vertices().into_iter().cloned().zip(pv) {
             if vertex.program != state {
                 let mut updated_vertex = vertex.clone();
                 updated_vertex.reprogram(state)?;
@@ -356,13 +426,13 @@ impl Reprogram<Vec<bool>> for BTreeReducer {
     }
 }
 
-impl Reprogram<String> for BTreeReducer
+impl Reprogram<String> for BTreeReducer<bool>
 where
     Self: Reprogram<Vec<bool>>,
 {
     type Error = Error;
     fn reprogram(&mut self, ps: String) -> Result<(), Error> {
-        let pv_vec: Vec<bool> = BTreeReducer::try_str_to_bool(ps)?;
+        let pv_vec: Vec<bool> = BTreeReducer::<bool>::try_str_to_bool(ps)?;
         self.reprogram(pv_vec)
     }
 }
@@ -377,13 +447,13 @@ mod unit_tests {
 
     #[test]
     fn new() {
-        let reducer: BTreeReducer = BTreeReducer::new();
+        let reducer: BTreeReducer<bool> = BTreeReducer::new();
         assert_eq!(reducer, BTreeReducer::default())
     }
 
     #[test]
     fn input() {
-        let reducer: BTreeReducer = BTreeReducer::new();
+        let reducer: BTreeReducer<bool> = BTreeReducer::new();
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
         assert!(!input[0])
@@ -391,7 +461,7 @@ mod unit_tests {
 
     #[test]
     fn configuration() {
-        let reducer: BTreeReducer = BTreeReducer::new();
+        let reducer: BTreeReducer<bool> = BTreeReducer::new();
         let configuration: Vec<bool> = reducer.configuration();
         assert_eq!(configuration.len(), 1);
         assert!(!configuration[0])
@@ -399,7 +469,7 @@ mod unit_tests {
 
     #[test]
     fn output() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
         let output: bool = reducer.output()?;
         assert!(!output);
         Ok(())
@@ -407,7 +477,7 @@ mod unit_tests {
 
     #[test]
     fn root() {
-        let reducer: BTreeReducer = BTreeReducer::new();
+        let reducer: BTreeReducer<bool> = BTreeReducer::new();
         assert_eq!(
             reducer.root(),
             Contact {
@@ -421,7 +491,7 @@ mod unit_tests {
 
     #[test]
     fn update() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
         let mut root = reducer.root();
         assert!(!root.input());
         assert!(!root.configuration());
@@ -458,9 +528,9 @@ mod unit_tests {
     }
 
     #[test]
-    fn add_gate() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        reducer.add_gate(reducer.root());
+    fn add_contact() -> Result<(), Error> {
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        reducer.add_contact(reducer.root());
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
@@ -474,7 +544,7 @@ mod unit_tests {
         let output: bool = reducer.output()?;
         assert!(!output);
 
-        let series = reducer.add_gate(reducer.root());
+        let series = reducer.add_contact(reducer.root());
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -490,7 +560,7 @@ mod unit_tests {
         let output: bool = reducer.output()?;
         assert!(!output);
 
-        reducer.add_gate(series);
+        reducer.add_contact(series);
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -511,8 +581,8 @@ mod unit_tests {
 
     #[test]
     fn reinput() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        reducer.add_gate(reducer.root());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        reducer.add_contact(reducer.root());
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 1);
@@ -547,9 +617,9 @@ mod unit_tests {
         assert_eq!(input.len(), 1);
         assert!(!input[0]);
 
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        reducer.add_gate(reducer.root());
-        reducer.add_gate(reducer.root());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        reducer.add_contact(reducer.root());
+        reducer.add_contact(reducer.root());
 
         let mut iv: Vec<bool> = Vec::new();
         iv.push(true);
@@ -614,8 +684,8 @@ mod unit_tests {
 
     #[test]
     fn reconfigure() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        reducer.add_gate(reducer.root());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        reducer.add_contact(reducer.root());
 
         let configuration: Vec<bool> = reducer.configuration();
         assert_eq!(configuration.len(), 2);
@@ -687,10 +757,10 @@ mod unit_tests {
 
     #[test]
     fn and_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series = reducer.add_gate(reducer.root());
-        reducer.add_gate(series.clone());
-        reducer.add_gate(series);
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series = reducer.add_contact(reducer.root());
+        reducer.add_contact(series.clone());
+        reducer.add_contact(series);
 
         let mut pv: Vec<bool> = Vec::new();
         pv.push(false);
@@ -778,10 +848,10 @@ mod unit_tests {
 
     #[test]
     fn nand_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series = reducer.add_gate(reducer.root());
-        reducer.add_gate(series.clone());
-        reducer.add_gate(series);
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series = reducer.add_contact(reducer.root());
+        reducer.add_contact(series.clone());
+        reducer.add_contact(series);
 
         let mut pv: Vec<bool> = Vec::new();
         pv.push(false);
@@ -876,10 +946,10 @@ mod unit_tests {
 
     #[test]
     fn or_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let parallel = reducer.add_gate(reducer.root());
-        reducer.add_gate(parallel.clone());
-        reducer.add_gate(parallel);
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let parallel = reducer.add_contact(reducer.root());
+        reducer.add_contact(parallel.clone());
+        reducer.add_contact(parallel);
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -960,10 +1030,10 @@ mod unit_tests {
 
     #[test]
     fn nor_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let parallel = reducer.add_gate(reducer.root());
-        reducer.add_gate(parallel.clone());
-        reducer.add_gate(parallel);
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let parallel = reducer.add_contact(reducer.root());
+        reducer.add_contact(parallel.clone());
+        reducer.add_contact(parallel);
 
         let input: Vec<bool> = reducer.input();
         assert_eq!(input.len(), 2);
@@ -1073,12 +1143,12 @@ mod unit_tests {
 
     #[test]
     fn xor_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series_0 = reducer.add_gate(reducer.root());
-        let parallel_1 = reducer.add_gate(series_0.clone());
-        let series_1 = reducer.add_gate(series_0.clone());
-        let input_0 = reducer.add_gate(parallel_1.clone());
-        let input_1 = reducer.add_gate(parallel_1.clone());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series_0 = reducer.add_contact(reducer.root());
+        let parallel_1 = reducer.add_contact(series_0.clone());
+        let series_1 = reducer.add_contact(series_0.clone());
+        let input_0 = reducer.add_contact(parallel_1.clone());
+        let input_1 = reducer.add_contact(parallel_1.clone());
         reducer.short(series_1.clone(), input_0)?;
         reducer.short(series_1, input_1)?;
 
@@ -1204,12 +1274,12 @@ mod unit_tests {
 
     #[test]
     fn xnor_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series_0 = reducer.add_gate(reducer.root());
-        let parallel_1 = reducer.add_gate(series_0.clone());
-        let series_1 = reducer.add_gate(series_0.clone());
-        let input_0 = reducer.add_gate(parallel_1.clone());
-        let input_1 = reducer.add_gate(parallel_1.clone());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series_0 = reducer.add_contact(reducer.root());
+        let parallel_1 = reducer.add_contact(series_0.clone());
+        let series_1 = reducer.add_contact(series_0.clone());
+        let input_0 = reducer.add_contact(parallel_1.clone());
+        let input_1 = reducer.add_contact(parallel_1.clone());
         reducer.short(series_1.clone(), input_0)?;
         reducer.short(series_1, input_1)?;
 
@@ -1335,10 +1405,10 @@ mod unit_tests {
 
     #[test]
     fn and_truth_table_trans_nand_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series = reducer.add_gate(reducer.root());
-        reducer.add_gate(series.clone());
-        reducer.add_gate(series);
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series = reducer.add_contact(reducer.root());
+        reducer.add_contact(series.clone());
+        reducer.add_contact(series);
 
         let mut pv: Vec<bool> = Vec::new();
         pv.push(false);
@@ -1514,12 +1584,12 @@ mod unit_tests {
 
     #[test]
     fn xor_truth_table_trans_xnor_truth_table() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series_0 = reducer.add_gate(reducer.root());
-        let parallel_1 = reducer.add_gate(series_0.clone());
-        let series_1 = reducer.add_gate(series_0.clone());
-        let input_0 = reducer.add_gate(parallel_1.clone());
-        let input_1 = reducer.add_gate(parallel_1.clone());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series_0 = reducer.add_contact(reducer.root());
+        let parallel_1 = reducer.add_contact(series_0.clone());
+        let series_1 = reducer.add_contact(series_0.clone());
+        let input_0 = reducer.add_contact(parallel_1.clone());
+        let input_1 = reducer.add_contact(parallel_1.clone());
         reducer.short(series_1.clone(), input_0)?;
         reducer.short(series_1, input_1)?;
 
@@ -1740,12 +1810,12 @@ mod unit_tests {
 
     #[test]
     fn xor_truth_table_trans_xnor_truth_table_string() -> Result<(), Error> {
-        let mut reducer: BTreeReducer = BTreeReducer::new();
-        let series_0 = reducer.add_gate(reducer.root());
-        let parallel_1 = reducer.add_gate(series_0.clone());
-        let series_1 = reducer.add_gate(series_0.clone());
-        let input_0 = reducer.add_gate(parallel_1.clone());
-        let input_1 = reducer.add_gate(parallel_1.clone());
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series_0 = reducer.add_contact(reducer.root());
+        let parallel_1 = reducer.add_contact(series_0.clone());
+        let series_1 = reducer.add_contact(series_0.clone());
+        let input_0 = reducer.add_contact(parallel_1.clone());
+        let input_1 = reducer.add_contact(parallel_1.clone());
         reducer.short(series_1.clone(), input_0)?;
         reducer.short(series_1, input_1)?;
 
