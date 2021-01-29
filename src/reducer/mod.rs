@@ -49,8 +49,8 @@ where
 
 impl Output<bool> for Contact<bool> {
     type Error = Error;
-    fn output(&mut self) -> Result<bool, Self::Error> {
-        Ok(self.input != self.configuration)
+    fn output(&mut self) -> bool {
+        self.input != self.configuration
     }
 }
 
@@ -124,7 +124,7 @@ where
         };
         self.dag.add_vertex(contact.clone());
         self.dag.add_edge(c, contact.clone()).unwrap();
-        self._resolve_branch(self.root()).unwrap();
+        self._resolve_branch(self.root());
         contact
     }
 
@@ -164,7 +164,7 @@ where
             self.dag
                 .add_edge(previous_parent.clone(), u.clone())
                 .unwrap();
-            self._resolve_branch(previous_parent).unwrap();
+            self._resolve_branch(previous_parent);
         }
     }
 
@@ -189,19 +189,19 @@ where
         self.dag.remove_edge(x, y)
     }
 
-    fn _resolve_branch(&mut self, c: Contact<T>) -> Result<T, Error>
+    fn _resolve_branch(&mut self, c: Contact<T>) -> T
     where
         T: Transition<T>,
         Contact<T>: Output<T>,
     {
-        let mut final_state: T = c.clone().output().unwrap_or_default();
+        let mut final_state: T = c.clone().output();
         if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
                 let state: T = c.input();
                 let mut assumed_state: T = c.program();
                 let mut state_set: bool = false;
                 for contact in contacts.clone() {
-                    if self._resolve_branch(contact).unwrap() != assumed_state && !state_set {
+                    if self._resolve_branch(contact) != assumed_state && !state_set {
                         assumed_state = assumed_state.transition();
                         state_set = true;
                     }
@@ -212,13 +212,13 @@ where
                     let mut updated_c: Contact<T> = c.clone();
                     updated_c.reinput(assumed_state).unwrap();
                     self.update(c, updated_c.clone());
-                    final_state = updated_c.output().unwrap_or_default();
+                    final_state = updated_c.output();
                 }
             }
         }
         // If there are no adjacent vertices, then this node is a leaf node;
         // the state is simply the output of the contact's XOR gate.
-        Ok(final_state)
+        final_state
     }
     fn try_str_to_bool(s: String) -> Result<Vec<bool>, Error> {
         let mut pv_vec: Vec<bool> = Vec::new();
@@ -284,18 +284,18 @@ where
     Contact<T>: Output<T>,
 {
     type Error = Error;
-    fn output(&mut self) -> Result<T, Self::Error> {
+    fn output(&mut self) -> T {
         self._resolve_branch(self.root())
     }
 }
 
 impl Output<String> for BTreeReducer<bool> {
     type Error = Error;
-    fn output(&mut self) -> Result<String, Self::Error> {
-        if self._resolve_branch(self.root())? {
-            Ok(String::from("1"))
+    fn output(&mut self) -> String {
+        if self._resolve_branch(self.root()) {
+            String::from("1")
         } else {
-            Ok(String::from("0"))
+            String::from("0")
         }
     }
 }
@@ -471,7 +471,7 @@ mod unit_tests {
     #[test]
     fn output() -> Result<(), Error> {
         let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
         Ok(())
     }
@@ -496,7 +496,7 @@ mod unit_tests {
         let mut root = reducer.root();
         assert!(!root.input());
         assert!(!root.configuration());
-        assert!(!root.output()?);
+        assert!(!root.output());
 
         let mut newroot = reducer.root();
         newroot.reinput(true)?;
@@ -504,7 +504,7 @@ mod unit_tests {
 
         assert!(reducer.root().input());
         assert!(!reducer.root().configuration());
-        assert!(reducer.root().output()?);
+        assert!(reducer.root().output());
 
         let mut newroot = reducer.root();
         newroot.reinput(false)?;
@@ -516,7 +516,7 @@ mod unit_tests {
 
         assert!(!reducer.root().input());
         assert!(reducer.root().configuration());
-        assert!(reducer.root().output()?);
+        assert!(reducer.root().output());
 
         let mut newroot = reducer.root();
         newroot.reconfigure(false)?;
@@ -524,7 +524,7 @@ mod unit_tests {
 
         assert!(!reducer.root().input());
         assert!(!reducer.root().configuration());
-        assert!(!reducer.root().output()?);
+        assert!(!reducer.root().output());
         Ok(())
     }
 
@@ -542,7 +542,7 @@ mod unit_tests {
         assert!(!configuration[0]);
         assert!(!configuration[1]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let series = reducer.add_contact(reducer.root());
@@ -558,7 +558,7 @@ mod unit_tests {
         assert!(!configuration[1]);
         assert!(!configuration[2]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         reducer.add_contact(series);
@@ -575,7 +575,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
         Ok(())
     }
@@ -782,7 +782,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -802,7 +802,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -822,7 +822,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -842,7 +842,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
         Ok(())
     }
@@ -873,7 +873,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -900,7 +900,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -920,7 +920,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -940,7 +940,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
         Ok(())
     }
@@ -964,7 +964,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -984,7 +984,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1004,7 +1004,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1024,7 +1024,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
         Ok(())
     }
@@ -1048,7 +1048,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -1070,7 +1070,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -1097,7 +1097,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1117,7 +1117,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1137,7 +1137,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
         Ok(())
     }
@@ -1176,7 +1176,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -1202,7 +1202,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1224,7 +1224,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1246,7 +1246,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1268,7 +1268,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
         Ok(())
     }
@@ -1307,7 +1307,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut sv: Vec<bool> = Vec::new();
@@ -1333,7 +1333,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1355,7 +1355,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1377,7 +1377,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1399,7 +1399,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
         Ok(())
     }
@@ -1430,7 +1430,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1450,7 +1450,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1470,7 +1470,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1490,7 +1490,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1517,7 +1517,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1537,7 +1537,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1557,7 +1557,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         let mut iv: Vec<bool> = Vec::new();
@@ -1577,7 +1577,7 @@ mod unit_tests {
         assert!(!configuration[2]);
         assert!(!configuration[3]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         Ok(())
@@ -1632,7 +1632,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         // 10 -> 1
@@ -1655,7 +1655,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         // 01 -> 1
@@ -1678,7 +1678,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         // 11 -> 0
@@ -1701,7 +1701,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         // XOR -> XNOR
@@ -1734,7 +1734,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         // 10 -> 0
@@ -1757,7 +1757,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         // 01 -> 0
@@ -1780,7 +1780,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(!output);
 
         // 11 -> 1
@@ -1803,7 +1803,7 @@ mod unit_tests {
         assert!(!configuration[4]);
         assert!(!configuration[5]);
 
-        let output: bool = reducer.output()?;
+        let output: bool = reducer.output();
         assert!(output);
 
         Ok(())
@@ -1836,7 +1836,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "0");
 
         // 10 -> 1
@@ -1849,7 +1849,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "1");
 
         // 01 -> 1
@@ -1862,7 +1862,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "1");
 
         // 11 -> 0
@@ -1875,7 +1875,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "000100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "0");
 
         // XOR -> XNOR
@@ -1892,7 +1892,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "1");
 
         // 10 -> 0
@@ -1905,7 +1905,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "0");
 
         // 01 -> 0
@@ -1918,7 +1918,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "0");
 
         // 11 -> 1
@@ -1931,7 +1931,7 @@ mod unit_tests {
         let configuration: String = reducer.configuration();
         assert_eq!(configuration.as_str(), "100100");
 
-        let output: String = reducer.output()?;
+        let output: String = reducer.output();
         assert_eq!(output, "1");
 
         Ok(())
@@ -1948,7 +1948,7 @@ mod unit_tests {
 
         impl Output<char> for Contact<char> {
             type Error = Error;
-            fn output(&mut self) -> Result<char, Self::Error> {
+            fn output(&mut self) -> char {
                 let mut vowels: BTreeSet<char> = BTreeSet::new();
                 vowels.insert('a');
                 vowels.insert('e');
@@ -1957,9 +1957,9 @@ mod unit_tests {
                 vowels.insert('u');
                 vowels.insert('y');
                 if vowels.contains(&self.input) {
-                    Ok('y')
+                    'y'
                 } else {
-                    Ok('n')
+                    'n'
                 }
             }
         }
@@ -1982,7 +1982,7 @@ mod unit_tests {
         program.push('\0');
         reducer.reprogram(program)?;
 
-        assert_eq!(reducer.output()?, 'y');
+        assert_eq!(reducer.output(), 'y');
 
         let mut input: Vec<char> = Vec::new();
         input.push('c');
@@ -1990,7 +1990,7 @@ mod unit_tests {
         input.push('t');
         reducer.reinput(input.clone())?;
 
-        assert_eq!(reducer.output()?, 'y');
+        assert_eq!(reducer.output(), 'y');
 
         let mut input: Vec<char> = Vec::new();
         input.push('p');
@@ -1998,7 +1998,7 @@ mod unit_tests {
         input.push('m');
         reducer.reinput(input.clone())?;
 
-        assert_eq!(reducer.output()?, 'n');
+        assert_eq!(reducer.output(), 'n');
 
         let mut input: Vec<char> = Vec::new();
         input.push('i');
@@ -2006,7 +2006,7 @@ mod unit_tests {
         input.push('m');
         reducer.reinput(input.clone())?;
 
-        assert_eq!(reducer.output()?, 'y');
+        assert_eq!(reducer.output(), 'y');
 
         let mut input: Vec<char> = Vec::new();
         input.push('d');
@@ -2014,7 +2014,7 @@ mod unit_tests {
         input.push('g');
         reducer.reinput(input.clone())?;
 
-        assert_eq!(reducer.output()?, 'y');
+        assert_eq!(reducer.output(), 'y');
 
         let mut input: Vec<char> = Vec::new();
         input.push('t');
@@ -2022,7 +2022,7 @@ mod unit_tests {
         input.push('s');
         reducer.reinput(input.clone())?;
 
-        assert_eq!(reducer.output()?, 'n');
+        assert_eq!(reducer.output(), 'n');
 
         Ok(())
     }

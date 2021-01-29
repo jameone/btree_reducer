@@ -110,7 +110,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "0");
 
     // 10 -> 1
@@ -123,7 +123,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "1");
 
     // 01 -> 1
@@ -136,7 +136,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "1");
 
     // 11 -> 0
@@ -149,7 +149,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "0");
 
     // XOR -> XNOR
@@ -166,7 +166,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "1");
 
     // 10 -> 0
@@ -179,7 +179,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "0");
 
     // 01 -> 0
@@ -192,7 +192,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "0");
 
     // 11 -> 1
@@ -205,7 +205,7 @@ fn main() {
     let configuration: String = reducer.configuration();
     assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output()?;
+    let output: String = reducer.output();
     assert_eq!(output, "1");
 }
 ```
@@ -227,7 +227,7 @@ fn main() {
 
     impl Output<char> for Contact<char> {
         type Error = Error;
-        fn output(&mut self) -> Result<char, Self::Error> {
+        fn output(&mut self) -> char {
             let mut vowels: BTreeSet<char> = BTreeSet::new();
             vowels.insert('a');
             vowels.insert('e');
@@ -236,9 +236,9 @@ fn main() {
             vowels.insert('u');
             vowels.insert('y');
             if vowels.contains(&self.input) {
-                Ok('y')
+                'y'
             } else {
-                Ok('n')
+                'n'
             }
         }
     }
@@ -261,7 +261,7 @@ fn main() {
     program.push('\0');
     reducer.reprogram(program)?;
 
-    assert_eq!(reducer.output()?, 'y');
+    assert_eq!(reducer.output(), 'y');
 
     let mut input: Vec<char> = Vec::new();
     input.push('c');
@@ -269,7 +269,7 @@ fn main() {
     input.push('t');
     reducer.reinput(input.clone())?;
 
-    assert_eq!(reducer.output()?, 'y');
+    assert_eq!(reducer.output(), 'y');
 
     let mut input: Vec<char> = Vec::new();
     input.push('p');
@@ -277,7 +277,7 @@ fn main() {
     input.push('m');
     reducer.reinput(input.clone())?;
 
-    assert_eq!(reducer.output()?, 'n');
+    assert_eq!(reducer.output(), 'n');
 
     let mut input: Vec<char> = Vec::new();
     input.push('i');
@@ -285,7 +285,7 @@ fn main() {
     input.push('m');
     reducer.reinput(input.clone())?;
 
-    assert_eq!(reducer.output()?, 'y');
+    assert_eq!(reducer.output(), 'y');
 
     let mut input: Vec<char> = Vec::new();
     input.push('d');
@@ -293,15 +293,15 @@ fn main() {
     input.push('g');
     reducer.reinput(input.clone())?;
 
-    assert_eq!(reducer.output()?, 'y');
+    assert_eq!(reducer.output(), 'y');
 
     let mut input: Vec<char> = Vec::new();
-    input.push('v');
     input.push('t');
     input.push('l');
+    input.push('s');
     reducer.reinput(input.clone())?;
 
-    assert_eq!(reducer.output()?, 'n');
+    assert_eq!(reducer.output(), 'n');
 }
 ```
 

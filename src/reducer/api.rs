@@ -92,5 +92,5 @@ pub trait Reprogram<T> {
 /// `Output`
 pub trait Output<T> {
     type Error;
-    fn output(&mut self) -> Result<T, Self::Error>;
+    fn output(&mut self) -> T;
 }
