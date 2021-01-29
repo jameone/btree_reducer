@@ -83,12 +83,12 @@ resolution algorithm will simply resolve the short as it does any other edge.
 use btree_reducer::{BTreeReducer, Arrangement};
 
 fn main() {
-    let mut reducer: BTreeReducer = BTreeReducer::new();
-    let series_0 = reducer.add_gate(reducer.root());
-    let parallel_1 = reducer.add_gate(series_0.clone());
-    let series_1 = reducer.add_gate(series_0.clone());
-    let input_0 = reducer.add_gate(parallel_1.clone());
-    let input_1 = reducer.add_gate(parallel_1.clone());
+    let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+    let series_0 = reducer.add_contact(reducer.root());
+    let parallel_1 = reducer.add_contact(series_0.clone());
+    let series_1 = reducer.add_contact(series_0.clone());
+    let input_0 = reducer.add_contact(parallel_1.clone());
+    let input_1 = reducer.add_contact(parallel_1.clone());
     reducer.short(series_1.clone(), input_0)?;
     reducer.short(series_1, input_1)?;
 
@@ -96,114 +96,114 @@ fn main() {
     reducer.reprogram(ps)?;
 
     let ss: String = String::from("000100");
-    reducer.transition_state(ss)?;
+    reducer.reconfigure(ss)?;
 
     // 00 -> 0
     let is: String = String::from("00");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "00");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "000100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "0");
 
     // 10 -> 1
     let is: String = String::from("10");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "10");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "000100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "1");
 
     // 01 -> 1
     let is: String = String::from("01");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "01");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "000100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "1");
 
     // 11 -> 0
     let is: String = String::from("11");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "11");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "000100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "000100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "0");
 
     // XOR -> XNOR
     let ss: String = String::from("100100");
-    reducer.transition_state(ss)?;
+    reducer.reconfigure(ss)?;
 
     // 00 -> 1
     let is: String = String::from("00");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "00");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "100100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "1");
 
     // 10 -> 0
     let is: String = String::from("10");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "10");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "100100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "0");
 
     // 01 -> 0
     let is: String = String::from("01");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "01");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "100100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "0");
 
     // 11 -> 1
     let is: String = String::from("11");
-    reducer.transition_input(is)?;
+    reducer.reinput(is)?;
 
     let input: String = reducer.input();
     assert_eq!(input.as_str(), "11");
 
-    let state: String = reducer.state();
-    assert_eq!(state.as_str(), "100100");
+    let configuration: String = reducer.configuration();
+    assert_eq!(configuration.as_str(), "100100");
 
-    let output: String = reducer.output();
+    let output: String = reducer.output()?;
     assert_eq!(output, "1");
 }
 ```

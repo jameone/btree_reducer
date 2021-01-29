@@ -1,6 +1,5 @@
 use alloc::string::String;
 use alloc::vec::Vec;
-use btree_dag::error::Error;
 
 /// `Transition`
 pub trait Transition<T> {

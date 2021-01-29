@@ -194,11 +194,11 @@ where
         T: Transition<T>,
         Contact<T>: Output<T>,
     {
-        let mut final_state: T = c.clone().output().unwrap_or(T::default());
+        let mut final_state: T = c.clone().output().unwrap_or_default();
         if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
                 let state: T = c.input();
-                let mut assumed_state: T = c.program().clone();
+                let mut assumed_state: T = c.program();
                 let mut state_set: bool = false;
                 for contact in contacts.clone() {
                     if self._resolve_branch(contact).unwrap() != assumed_state && !state_set {
@@ -212,7 +212,7 @@ where
                     let mut updated_c: Contact<T> = c.clone();
                     updated_c.reinput(assumed_state).unwrap();
                     self.update(c, updated_c.clone());
-                    final_state = updated_c.output().unwrap_or(T::default());
+                    final_state = updated_c.output().unwrap_or_default();
                 }
             }
         }
@@ -308,7 +308,7 @@ where
     type Error = Error;
     fn reinput(&mut self, iv: Vec<T>) -> Result<(), Self::Error> {
         let input: Vec<T> = self.input();
-        if &input.dimension() != &iv.dimension() {
+        if input.dimension() != iv.dimension() {
             return Err(Error::EdgeExistsError);
         }
         for (vertex, state) in self.get_input_contacts().iter().cloned().zip(iv) {
@@ -379,7 +379,7 @@ where
     type Error = Error;
     fn reconfigure(&mut self, cv: Vec<T>) -> Result<(), Self::Error> {
         let configuration: Vec<T> = self.configuration();
-        if &configuration.dimension() != &cv.dimension() {
+        if configuration.dimension() != cv.dimension() {
             return Err(Error::EdgeExistsError);
         }
         for (vertex, state) in self.dag.clone().vertices().into_iter().cloned().zip(cv) {
@@ -412,7 +412,7 @@ where
     type Error = Error;
     fn reprogram(&mut self, pv: Vec<T>) -> Result<(), Self::Error> {
         let program: Vec<T> = self.program();
-        if &program.dimension() != &pv.dimension() {
+        if program.dimension() != pv.dimension() {
             return Err(Error::EdgeExistsError);
         }
         for (vertex, state) in self.dag.clone().vertices().into_iter().cloned().zip(pv) {
@@ -439,11 +439,12 @@ where
 
 #[cfg(test)]
 mod unit_tests {
-    use crate::reducer::api::{Configuration, Input, Output, Reconfigure, Reinput, Reprogram};
+    use crate::reducer::api::{Configuration, Input, Output, Reconfigure, Reinput, Reprogram, Transition};
     use crate::reducer::{BTreeReducer, Contact};
     use alloc::string::String;
     use alloc::vec::Vec;
     use btree_dag::error::Error;
+    use alloc::collections::BTreeSet;
 
     #[test]
     fn new() {
@@ -497,29 +498,29 @@ mod unit_tests {
         assert!(!root.configuration());
         assert!(!root.output()?);
 
-        let mut new_root = reducer.root();
-        new_root.reinput(true)?;
-        reducer.update(reducer.root(), new_root);
+        let mut newroot = reducer.root();
+        newroot.reinput(true)?;
+        reducer.update(reducer.root(), newroot);
 
         assert!(reducer.root().input());
         assert!(!reducer.root().configuration());
         assert!(reducer.root().output()?);
 
-        let mut new_root = reducer.root();
-        new_root.reinput(false)?;
-        reducer.update(reducer.root(), new_root);
+        let mut newroot = reducer.root();
+        newroot.reinput(false)?;
+        reducer.update(reducer.root(), newroot);
 
-        let mut new_root = reducer.root();
-        new_root.reconfigure(true)?;
-        reducer.update(reducer.root(), new_root);
+        let mut newroot = reducer.root();
+        newroot.reconfigure(true)?;
+        reducer.update(reducer.root(), newroot);
 
         assert!(!reducer.root().input());
         assert!(reducer.root().configuration());
         assert!(reducer.root().output()?);
 
-        let mut new_root = reducer.root();
-        new_root.reconfigure(false)?;
-        reducer.update(reducer.root(), new_root);
+        let mut newroot = reducer.root();
+        newroot.reconfigure(false)?;
+        reducer.update(reducer.root(), newroot);
 
         assert!(!reducer.root().input());
         assert!(!reducer.root().configuration());
@@ -1933,6 +1934,59 @@ mod unit_tests {
         let output: String = reducer.output()?;
         assert_eq!(output, "1");
 
+        Ok(())
+    }
+
+    #[test]
+    fn vowels() -> Result<(), Error> {
+
+        impl Transition<char> for char {
+            fn transition(&self) -> char {
+                '\0'
+            }
+        }
+
+        impl Output<char> for Contact<char> {
+            type Error = Error;
+            fn output(&mut self) -> Result<char, Self::Error> {
+                let contains = |i: char| -> bool {
+                    let mut vowels: BTreeSet<char> = BTreeSet::new();
+                    vowels.insert('a');
+                    vowels.insert('e');
+                    vowels.insert('i');
+                    vowels.insert('o');
+                    vowels.insert('u');
+                    vowels.contains(&i)
+                };
+                if contains(self.input) {
+                    Ok(self.input)
+                } else {
+                    Ok('\0')
+                }
+            }
+        }
+
+        let mut reducer: BTreeReducer<char> = BTreeReducer::new();
+        reducer.add_contact(reducer.root());
+        reducer.add_contact(reducer.root());
+        reducer.add_contact(reducer.root());
+
+        let mut input: Vec<char> = Vec::new();
+        input.push('a');
+        input.push('a');
+        input.push('a');
+
+        reducer.reinput(input.clone())?;
+
+        let mut program: Vec<char> = Vec::new();
+        program.push('a');
+        program.push('\0');
+        program.push('\0');
+        program.push('\0');
+
+        reducer.reprogram(program)?;
+
+        assert_eq!(reducer.output()?, 'a');
         Ok(())
     }
 }
