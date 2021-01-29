@@ -1,11 +1,14 @@
 #[cfg(test)]
 mod unit_tests {
-    use crate::reducer::api::{Configuration, Input, Output, Reconfigure, Reinput, Reprogram, Transition};
+    use crate::reducer::api::{
+        AddGate, Configuration, Input, Output, Reconfigure, Reinput, RemoveShort, Reprogram, Short,
+        Transition,
+    };
     use crate::reducer::{BTreeReducer, Gate};
     use crate::Error;
+    use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::vec::Vec;
-    use alloc::collections::BTreeSet;
 
     #[test]
     fn new() {
@@ -1500,7 +1503,6 @@ mod unit_tests {
 
     #[test]
     fn vowels() -> Result<(), Error> {
-
         impl Transition<char> for char {
             fn transition(&self) -> char {
                 'y'
@@ -1585,6 +1587,20 @@ mod unit_tests {
 
         assert_eq!(reducer.output(), 'n');
 
+        Ok(())
+    }
+
+    #[test]
+    fn remove_short() -> Result<(), Error> {
+        let mut reducer: BTreeReducer<bool> = BTreeReducer::new();
+        let series_0 = reducer.add_gate(reducer.root());
+        let parallel_1 = reducer.add_gate(series_0.clone());
+        let series_1 = reducer.add_gate(series_0.clone());
+        let input_0 = reducer.add_gate(parallel_1.clone());
+        let input_1 = reducer.add_gate(parallel_1.clone());
+        reducer.short(series_1.clone(), input_0)?;
+        reducer.short(series_1.clone(), input_1.clone())?;
+        reducer.remove_short(series_1, input_1)?;
         Ok(())
     }
 }

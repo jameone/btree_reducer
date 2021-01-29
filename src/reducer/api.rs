@@ -1,7 +1,6 @@
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::collections::BTreeSet;
-// use crate::reducer::Gate;
 
 /// `Transition`
 pub trait Transition<T> {
@@ -95,4 +94,21 @@ pub trait Reprogram<T> {
 pub trait Output<T> {
     type Error;
     fn output(&mut self) -> T;
+}
+
+/// `Short`
+pub trait Short<T> {
+    type Error;
+    fn short(&mut self, x: T, y: T) -> Result<BTreeSet<T>, Self::Error>;
+}
+
+/// `RemoveShort`
+pub trait RemoveShort<T> {
+    type Error;
+    fn remove_short(&mut self, x: T, y: T) -> Result<BTreeSet<T>, Self::Error>;
+}
+
+/// `AddGate`
+pub trait AddGate<T> {
+    fn add_gate(&mut self, g: T) -> T;
 }

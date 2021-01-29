@@ -1,11 +1,12 @@
 use crate::reducer::api::{
-    Configuration, Dimension, Input, Output, Program, Reconfigure, Reinput, Reprogram, Transition,
+    AddGate, Configuration, Dimension, Input, Output, Program, Reconfigure, Reinput, RemoveShort,
+    Reprogram, Short, Transition,
 };
+use crate::Error;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use btree_dag::{AddEdge, AddVertex, BTreeDAG, Connections, RemoveEdge, RemoveVertex, Vertices};
-use crate::Error;
 
 mod api;
 mod test;
@@ -112,43 +113,14 @@ where
         BTreeReducer { dag }
     }
 
-    pub fn add_gate(&mut self, c: Gate<T>) -> Gate<T>
-    where
-        Gate<T>: Output<T>,
-    {
-        let vertices: Vec<&Gate<T>> = self.dag.vertices().into_iter().collect();
-        let contact: Gate<T> = Gate {
-            id: vertices[vertices.len() - 1].id + 1,
-            input: T::default(),
-            configuration: T::default(),
-            program: T::default(),
-        };
-        self.dag.add_vertex(contact.clone());
-        self.dag.add_edge(c, contact.clone()).unwrap();
-        self._resolve_branch(self.root());
-        contact
-    }
-
     pub fn root(&self) -> Gate<T> {
         let vertices: Vec<Gate<T>> = self.dag.vertices().into_iter().cloned().collect();
         vertices[0].clone()
     }
 
-    pub fn short(&mut self, x: Gate<T>, y: Gate<T>) -> Result<BTreeSet<Gate<T>>, Error> {
-        self.dag.add_edge(x, y)
-    }
-
-    pub fn remove_short(
-        &mut self,
-        x: Gate<T>,
-        y: Gate<T>,
-    ) -> Result<BTreeSet<Gate<T>>, Error> {
-        self.dag.remove_edge(x, y)
-    }
-
     pub fn update(&mut self, p: Gate<T>, u: Gate<T>)
-        where
-            Gate<T>: Output<T>,
+    where
+        Gate<T>: Output<T>,
     {
         let previous_parents: BTreeSet<Gate<T>> = self
             .dag
@@ -219,6 +191,48 @@ where
         // If there are no adjacent vertices, then this node is a leaf node;
         // the state is simply the output of the contact's XOR gate.
         final_state
+    }
+}
+
+impl<T> AddGate<Gate<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default + Transition<T>,
+    Gate<T>: Output<T>,
+{
+    fn add_gate(&mut self, c: Gate<T>) -> Gate<T>
+    {
+        let vertices: Vec<&Gate<T>> = self.dag.vertices().into_iter().collect();
+        let contact: Gate<T> = Gate {
+            id: vertices[vertices.len() - 1].id + 1,
+            input: T::default(),
+            configuration: T::default(),
+            program: T::default(),
+        };
+        self.dag.add_vertex(contact.clone());
+        self.dag.add_edge(c, contact.clone()).unwrap();
+        self._resolve_branch(self.root());
+        contact
+    }
+}
+
+impl<T> Short<Gate<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default,
+    Gate<T>: Output<T>,
+{
+    type Error = Error;
+    fn short(&mut self, x: Gate<T>, y: Gate<T>) -> Result<BTreeSet<Gate<T>>, Self::Error> {
+        self.dag.add_edge(x, y)
+    }
+}
+
+impl<T> RemoveShort<Gate<T>> for BTreeReducer<T>
+where
+    T: Clone + Ord + Default,
+{
+    type Error = Error;
+    fn remove_short(&mut self, x: Gate<T>, y: Gate<T>) -> Result<BTreeSet<Gate<T>>, Error> {
+        self.dag.remove_edge(x, y)
     }
 }
 
@@ -324,8 +338,8 @@ where
 }
 
 impl Reinput<String> for BTreeReducer<bool>
-    where
-        Self: Reinput<Vec<bool>>,
+where
+    Self: Reinput<Vec<bool>>,
 {
     type Error = Error;
     fn reinput(&mut self, ss: String) -> Result<(), Self::Error> {
@@ -395,8 +409,8 @@ where
 }
 
 impl Reconfigure<String> for BTreeReducer<bool>
-    where
-        Self: Reconfigure<Vec<bool>>,
+where
+    Self: Reconfigure<Vec<bool>>,
 {
     type Error = Error;
     fn reconfigure(&mut self, ss: String) -> Result<(), Self::Error> {
