@@ -1,6 +1,6 @@
 # Binary Tree Reducer (btree_reducer)
 
-[![CodeBuild]][CodeBuild]
+![CodeBuild]
 [![Version badge]][crates.io]
 [![Docs badge]][docs.rs]
 
