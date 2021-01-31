@@ -6,6 +6,13 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+serde_cbor = ["try_encoding_from/cbor"]
+serde_json = ["try_encoding_from/json"]
+serde_yaml = ["try_encoding_from/yaml"]
+
+
 [dependencies]
 btree_error = { version = "0.1.0" }
 btree_dag = { path = "../btree_dag" }
+try_encoding_from = { version = "0.1.3", default-features = false, optional = true }
