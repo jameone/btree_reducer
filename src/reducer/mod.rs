@@ -23,8 +23,8 @@ where
 }
 
 impl Transition<bool> for Gate<bool> {
-    fn transition(&mut self) {
-        self.program = !self.program;
+    fn transition(&self) -> bool {
+        !self.program
     }
 }
 
@@ -173,25 +173,21 @@ where
     where
         Gate<T>: Output<T> + Transition<T>,
     {
-        let mut c = c.clone();
         let mut final_state: T = c.clone().output();
         if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
-                let input: T = c.input();
-                let program: T = c.program();
                 let mut state_set: bool = false;
                 for contact in contacts.clone() {
-                    if self._resolve_branch(contact) != program && !state_set {
-                        c.transition();
-                        // program = program.transition();
+                    if self._resolve_branch(contact) != c.program() && !state_set {
                         state_set = true;
                     }
                 }
                 // If the determined state is not equal to the current state,
                 // update the current state with the determined state.
-                if input != program {
+                let reinput: T = if state_set { c.transition() } else { c.program() };
+                if c.input() != reinput {
                     let mut updated_c: Gate<T> = c.clone();
-                    updated_c.reinput(c.program()).unwrap();
+                    updated_c.reinput(reinput).unwrap();
                     self.update(c, updated_c.clone());
                     final_state = updated_c.output();
                 }

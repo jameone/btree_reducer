@@ -1504,8 +1504,8 @@ mod unit_tests {
     #[test]
     fn vowels() -> Result<(), Error> {
         impl Transition<char> for Gate<char> {
-            fn transition(&mut self) {
-                self.program = 'y';
+            fn transition(&self) -> char {
+                'y'
             }
         }
 

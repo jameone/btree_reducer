@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 /// `Transition`
 pub trait Transition<T> {
-    fn transition(&mut self);
+    fn transition(&self) -> T;
 }
 
 /// `Dimension`
