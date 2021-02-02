@@ -20,23 +20,24 @@
 
 This library presents the user with a high level data
 structure called `BTreeReducer`. This data structure can
-be thought of as a generalization of a Boolean logic gate.
+be thought of as a generalization of a Boolean logic gate as,
+in general, there may be *n* inputs and only ever one (1) output.
 The implementation employs `BTreeDAG` to construct a directed
-acyclic graph (DAG) of "Contacts" (think switches, these can be
-either normally open or normally closed, essentially XOR gates).
-There is only ever one (1) root node (node 0) which represents
-the output bit. All other nodes have an output dependent on
-their input, state, program bits, and whether they have child
-elements. If a node does not have child elements, i.e. is a
-leaf node, then it is considered an input of the `BTreeReducer`.
-That is, the number of inputs related to the `BTreeReducer`
-is equal to the number of leaf nodes in the `BTreeReducer`'s DAG.
+acyclic graph (DAG) of "Contacts" (think switches in the `bool` case,
+these can be either normally open or normally closed, essentially
+XOR gates). There is only ever one (1) root node which represents
+the output type. All other nodes have an output dependent on
+their input, state, program, and child elements. If a node does
+not have child elements, i.e. is a leaf node, then it is considered
+an input of the `BTreeReducer`. That is, the number of inputs
+related to the `BTreeReducer` is equal to the number of leaf nodes
+in the `BTreeReducer`'s DAG.
 
-Each node consists of three (3) bits. One (1) input bit,
-one (1) state bit, and one (1) program bit. If the node has
-child elements, then the input bit is a function of the state
-bit, program bit, and output of child elements defined by the
-following pseudo code:
+In the case of `bool` type, each node consists of three (3) bits.
+One (1) input bit, one (1) state bit, and one (1) program bit.
+If the node has child elements, then the input bit is a function
+of the state bit, program bit, and output of child elements defined
+by the following pseudo code:
 
 ```yaml
 Output:
@@ -219,8 +220,8 @@ fn main() {
 ```
 
 As a further example of the generality of this data structure, consider creating a simple
-reducer which checks if any three (3) letter words contain vowels. Notice we are overriding
-a couple of the traits to achieve the desired functionality.
+reducer which checks if any three (3) letter words contain vowels. Notice we are required
+to implement a couple of the traits to achieve the desired functionality.
 
 ```rust
 use btree_reducer::{BTreeReducer, Transition, Output, Contact};

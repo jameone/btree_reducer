@@ -4,13 +4,7 @@ use alloc::vec::Vec;
 
 /// `Transition`
 pub trait Transition<T> {
-    fn transition(&self) -> T;
-}
-
-impl Transition<bool> for bool {
-    fn transition(&self) -> bool {
-        !*self
-    }
+    fn transition(&mut self);
 }
 
 /// `Dimension`

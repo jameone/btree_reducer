@@ -22,6 +22,12 @@ where
     program: T,
 }
 
+impl Transition<bool> for Gate<bool> {
+    fn transition(&mut self) {
+        self.program = !self.program;
+    }
+}
+
 impl<T> Input<T> for Gate<T>
 where
     T: Default + Ord + Clone,
@@ -99,7 +105,8 @@ where
 
 impl<T> BTreeReducer<T>
 where
-    T: Default + Ord + Clone + Transition<T>,
+    T: Default + Ord + Clone,
+    Gate<T>: Transition<T>
 {
     fn new() -> Self {
         let mut dag: BTreeDAG<Gate<T>> = BTreeDAG::new();
@@ -120,7 +127,7 @@ where
 
     pub fn update(&mut self, p: Gate<T>, u: Gate<T>)
     where
-        Gate<T>: Output<T>,
+        Gate<T>: Output<T> + Transition<T>,
     {
         let previous_parents: BTreeSet<Gate<T>> = self
             .dag
@@ -164,25 +171,27 @@ where
 
     fn _resolve_branch(&mut self, c: Gate<T>) -> T
     where
-        T: Transition<T>,
-        Gate<T>: Output<T>,
+        Gate<T>: Output<T> + Transition<T>,
     {
+        let mut c = c.clone();
         let mut final_state: T = c.clone().output();
         if let Some(contacts) = self.dag.connections(c.clone()) {
             if !contacts.is_empty() {
-                let mut program: T = c.program();
+                let input: T = c.input();
+                let program: T = c.program();
                 let mut state_set: bool = false;
                 for contact in contacts.clone() {
-                    if self._resolve_branch(contact) != c.program() && !state_set {
-                        program = program.transition();
+                    if self._resolve_branch(contact) != program && !state_set {
+                        c.transition();
+                        // program = program.transition();
                         state_set = true;
                     }
                 }
                 // If the determined state is not equal to the current state,
                 // update the current state with the determined state.
-                if c.input() != program {
+                if input != program {
                     let mut updated_c: Gate<T> = c.clone();
-                    updated_c.reinput(program).unwrap();
+                    updated_c.reinput(c.program()).unwrap();
                     self.update(c, updated_c.clone());
                     final_state = updated_c.output();
                 }
@@ -196,8 +205,8 @@ where
 
 impl<T> AddGate<Gate<T>> for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
-    Gate<T>: Output<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Output<T> + Transition<T>,
 {
     fn add_gate(&mut self, c: Gate<T>) -> Gate<T>
     {
@@ -238,7 +247,8 @@ where
 
 impl<T> Default for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Transition<T>
 {
     fn default() -> Self {
         Self::new()
@@ -247,7 +257,8 @@ where
 
 impl<T> Input<Vec<T>> for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Transition<T>
 {
     fn input(&self) -> Vec<T> {
         self._get_input_contacts()
@@ -295,8 +306,8 @@ where
 
 impl<T> Output<T> for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
-    Gate<T>: Output<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Output<T> + Transition<T>,
 {
     type Error = Error;
     fn output(&mut self) -> T {
@@ -317,8 +328,8 @@ impl Output<String> for BTreeReducer<bool> {
 
 impl<T> Reinput<Vec<T>> for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
-    Gate<T>: Output<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Output<T> + Transition<T>,
 {
     type Error = Error;
     fn reinput(&mut self, iv: Vec<T>) -> Result<(), Self::Error> {
@@ -388,8 +399,8 @@ impl Program<String> for BTreeReducer<bool> {
 
 impl<T> Reconfigure<Vec<T>> for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
-    Gate<T>: Output<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Output<T> + Transition<T>,
 {
     type Error = Error;
     fn reconfigure(&mut self, cv: Vec<T>) -> Result<(), Self::Error> {
@@ -421,8 +432,8 @@ where
 
 impl<T> Reprogram<Vec<T>> for BTreeReducer<T>
 where
-    T: Clone + Ord + Default + Transition<T>,
-    Gate<T>: Output<T>,
+    T: Clone + Ord + Default,
+    Gate<T>: Output<T> + Transition<T>,
 {
     type Error = Error;
     fn reprogram(&mut self, pv: Vec<T>) -> Result<(), Self::Error> {
